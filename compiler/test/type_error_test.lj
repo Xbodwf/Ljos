@@ -1,0 +1,17 @@
+# Test type errors
+
+# 1. Wrong return type
+fn wrongReturn(): Int {
+    return "hello"
+}
+
+# 2. Incompatible assignment
+fn wrongAssignment() {
+    const x: Int = "hello"
+}
+
+# 3. Wrong type in variable reassignment
+fn wrongReassignment() {
+    mut a: Int = 10
+    a = "world"
+}

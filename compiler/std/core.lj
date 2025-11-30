@@ -1,0 +1,147 @@
+# Ljos Standard Library - Core Module
+# 核心类型和基础操作
+
+# ============ 基础类型别名 ============
+# 这些类型由编译器内建支持，这里提供用户可见的名称
+
+export type Int = __int      # 平台相关整数 (32/64位)
+export type Float = __float  # 64位浮点数
+export type Bool = __bool    # 布尔类型
+export type Str = __str      # UTF-32 字符串
+export type Nul = __nul      # 空类型
+export type Bytes = __bytes  # 字节序列
+
+# ============ 固定宽度整数类型 ============
+export type I8 = __i8
+export type I16 = __i16
+export type I32 = __i32
+export type I64 = __i64
+export type U8 = __u8
+export type U16 = __u16
+export type U32 = __u32
+export type U64 = __u64
+
+# ============ 常用泛型类型 ============
+
+# Option 类型 - 表示可能为空的值
+export type Option<T> = T | Nul
+
+# Result 类型 - 表示可能失败的操作
+export type Result<T, E> = { ok: T } | { err: E }
+
+# ============ 类型检查函数 ============
+
+export fn isInt(value) : Bool {
+  return __typeof(value) == "int"
+}
+
+export fn isFloat(value) : Bool {
+  return __typeof(value) == "float"
+}
+
+export fn isStr(value) : Bool {
+  return __typeof(value) == "str"
+}
+
+export fn isBool(value) : Bool {
+  return __typeof(value) == "bool"
+}
+
+export fn isNul(value) : Bool {
+  return value is nul
+}
+
+# ============ 类型转换函数 ============
+
+export fn toInt(value) : Option<Int> {
+  return __toInt(value)
+}
+
+export fn toFloat(value) : Option<Float> {
+  return __toFloat(value)
+}
+
+export fn toStr(value) : Str {
+  return __toStr(value)
+}
+
+export fn toBool(value) : Bool {
+  return __toBool(value)
+}
+
+# ============ 数学常量 ============
+export const PI: Float = 3.141592653589793
+export const E: Float = 2.718281828459045
+export const TAU: Float = 6.283185307179586
+
+# ============ 数学函数 ============
+
+export fn abs(x: Int | Float) : Int | Float {
+  return if (x < 0) -x else x
+}
+
+export fn min(a, b) {
+  return if (a < b) a else b
+}
+
+export fn max(a, b) {
+  return if (a > b) a else b
+}
+
+export fn clamp(value, minVal, maxVal) {
+  return min(max(value, minVal), maxVal)
+}
+
+# ============ 范围生成 ============
+
+export fn range(start: Int, end: Int, step: Int = 1) : [Int] {
+  return __range(start, end, step)
+}
+
+export fn rangeInclusive(start: Int, end: Int, step: Int = 1) : [Int] {
+  return __range(start, end + 1, step)
+}
+
+# ============ 断言 ============
+
+export fn assert(condition: Bool, message: Str = "Assertion failed") {
+  if (!condition) {
+    throw Error(message)
+  }
+}
+
+export fn unreachable(message: Str = "Unreachable code") {
+  throw Error(message)
+}
+
+# ============ 错误类型 ============
+
+export class Error {
+  mut message: Str
+  
+  constructor(message: Str = "") {
+    this.message = message
+  }
+  
+  fn toString() : Str {
+    return "Error: ${this.message}"
+  }
+}
+
+export class TypeError extends Error {
+  constructor(message: Str = "Type error") {
+    super(message)
+  }
+}
+
+export class ValueError extends Error {
+  constructor(message: Str = "Value error") {
+    super(message)
+  }
+}
+
+export class IndexError extends Error {
+  constructor(message: Str = "Index out of bounds") {
+    super(message)
+  }
+}

@@ -1,0 +1,264 @@
+# Ljos Standard Library - File System Module
+# 文件系统操作
+
+import { Str, Bool, Int, Option, Result, Bytes } : "/std/core"
+
+# ============ 文件操作 ============
+
+# 读取文件内容为字符串
+export fn readFile(path: Str) : Result<Str, Error> {
+  return __fsReadFile(path)
+}
+
+# 读取文件内容为字节
+export fn readFileBytes(path: Str) : Result<Bytes, Error> {
+  return __fsReadFileBytes(path)
+}
+
+# 写入字符串到文件
+export fn writeFile(path: Str, content: Str) : Result<Nul, Error> {
+  return __fsWriteFile(path, content)
+}
+
+# 写入字节到文件
+export fn writeFileBytes(path: Str, content: Bytes) : Result<Nul, Error> {
+  return __fsWriteFileBytes(path, content)
+}
+
+# 追加内容到文件
+export fn appendFile(path: Str, content: Str) : Result<Nul, Error> {
+  return __fsAppendFile(path, content)
+}
+
+# 检查文件是否存在
+export fn exists(path: Str) : Bool {
+  return __fsExists(path)
+}
+
+# 删除文件
+export fn remove(path: Str) : Result<Nul, Error> {
+  return __fsRemove(path)
+}
+
+# 重命名/移动文件
+export fn rename(oldPath: Str, newPath: Str) : Result<Nul, Error> {
+  return __fsRename(oldPath, newPath)
+}
+
+# 复制文件
+export fn copy(src: Str, dest: Str) : Result<Nul, Error> {
+  return __fsCopy(src, dest)
+}
+
+# ============ 目录操作 ============
+
+# 创建目录
+export fn mkdir(path: Str) : Result<Nul, Error> {
+  return __fsMkdir(path)
+}
+
+# 递归创建目录
+export fn mkdirAll(path: Str) : Result<Nul, Error> {
+  return __fsMkdirAll(path)
+}
+
+# 删除目录
+export fn rmdir(path: Str) : Result<Nul, Error> {
+  return __fsRmdir(path)
+}
+
+# 递归删除目录
+export fn rmdirAll(path: Str) : Result<Nul, Error> {
+  return __fsRmdirAll(path)
+}
+
+# 读取目录内容
+export fn readDir(path: Str) : Result<[DirEntry], Error> {
+  return __fsReadDir(path)
+}
+
+# ============ 路径操作 ============
+
+# 获取文件名
+export fn basename(path: Str) : Str {
+  return __pathBasename(path)
+}
+
+# 获取目录名
+export fn dirname(path: Str) : Str {
+  return __pathDirname(path)
+}
+
+# 获取扩展名
+export fn extname(path: Str) : Str {
+  return __pathExtname(path)
+}
+
+# 连接路径
+export fn join(parts...) : Str {
+  return __pathJoin(parts...)
+}
+
+# 解析为绝对路径
+export fn resolve(path: Str) : Str {
+  return __pathResolve(path)
+}
+
+# 获取相对路径
+export fn relative(from: Str, to: Str) : Str {
+  return __pathRelative(from, to)
+}
+
+# 规范化路径
+export fn normalize(path: Str) : Str {
+  return __pathNormalize(path)
+}
+
+# 检查是否为绝对路径
+export fn isAbsolute(path: Str) : Bool {
+  return __pathIsAbsolute(path)
+}
+
+# ============ 文件信息 ============
+
+export class FileInfo {
+  const path: Str
+  const size: Int
+  const isFile: Bool
+  const isDir: Bool
+  const isSymlink: Bool
+  const createdAt: Int
+  const modifiedAt: Int
+  const accessedAt: Int
+  
+  constructor(path: Str, size: Int, isFile: Bool, isDir: Bool, isSymlink: Bool, createdAt: Int, modifiedAt: Int, accessedAt: Int) {
+    this.path = path
+    this.size = size
+    this.isFile = isFile
+    this.isDir = isDir
+    this.isSymlink = isSymlink
+    this.createdAt = createdAt
+    this.modifiedAt = modifiedAt
+    this.accessedAt = accessedAt
+  }
+}
+
+export class DirEntry {
+  const name: Str
+  const isFile: Bool
+  const isDir: Bool
+  const isSymlink: Bool
+  
+  constructor(name: Str, isFile: Bool, isDir: Bool, isSymlink: Bool) {
+    this.name = name
+    this.isFile = isFile
+    this.isDir = isDir
+    this.isSymlink = isSymlink
+  }
+}
+
+# 获取文件信息
+export fn stat(path: Str) : Result<FileInfo, Error> {
+  return __fsStat(path)
+}
+
+# ============ File 类 - 文件句柄 ============
+
+export class File {
+  mut _handle: __FileHandle
+  mut _path: Str
+  mut _closed: Bool
+  
+  constructor(handle: __FileHandle, path: Str) {
+    this._handle = handle
+    this._path = path
+    this._closed = false
+  }
+  
+  static fn open(path: Str, mode: Str = "r") : Result<File, Error> {
+    const handle = __fsOpen(path, mode)
+    if (handle is nul) {
+      return { err: Error("Failed to open file: ${path}") }
+    }
+    return { ok: new File(handle, path) }
+  }
+  
+  static fn create(path: Str) : Result<File, Error> {
+    return File.open(path, "w")
+  }
+  
+  fn read(size: Int = -1) : Result<Str, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsRead(this._handle, size)
+  }
+  
+  fn readBytes(size: Int = -1) : Result<Bytes, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsReadBytes(this._handle, size)
+  }
+  
+  fn readLine() : Result<Option<Str>, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsReadLine(this._handle)
+  }
+  
+  fn write(content: Str) : Result<Int, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsWrite(this._handle, content)
+  }
+  
+  fn writeBytes(content: Bytes) : Result<Int, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsWriteBytes(this._handle, content)
+  }
+  
+  fn seek(offset: Int, whence: Int = 0) : Result<Int, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsSeek(this._handle, offset, whence)
+  }
+  
+  fn flush() : Result<Nul, Error> {
+    if (this._closed) {
+      return { err: Error("File is closed") }
+    }
+    return __fsFlush(this._handle)
+  }
+  
+  fn close() : Result<Nul, Error> {
+    if (this._closed) {
+      return { ok: nul }
+    }
+    this._closed = true
+    return __fsClose(this._handle)
+  }
+  
+  fn isClosed() : Bool {
+    return this._closed
+  }
+  
+  fn path() : Str {
+    return this._path
+  }
+  
+  # Disposable 接口
+  fn dispose() {
+    this.close()
+  }
+}
+
+# Seek 常量
+export const SEEK_SET: Int = 0
+export const SEEK_CUR: Int = 1
+export const SEEK_END: Int = 2

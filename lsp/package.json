@@ -1,0 +1,45 @@
+{
+  "name": "ljos-language",
+  "displayName": "Ljos Language",
+  "description": "Ljos语言支持: 语法高亮、类型检查、悬浮提示、模块解析",
+  "version": "2.0.0",
+  "publisher": "ljos",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:ljos"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.2"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "ljos",
+        "aliases": ["Ljos", "ljos", "lj"],
+        "extensions": [".lj"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ljos",
+        "scopeName": "source.ljos",
+        "path": "./syntaxes/ljos.tmLanguage.json"
+      }
+    ]
+  }
+}

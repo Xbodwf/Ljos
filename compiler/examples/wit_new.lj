@@ -1,0 +1,38 @@
+# Hello World in Ljos (使用标准库)
+
+import { println } : "/std/io"
+import { Int, Str } : "/std/core"
+
+fn greet(name: Str = "World") : Str {
+  return "Hello, ${name}!"
+}
+
+fn main() {
+  println("println")
+  println("fn main() {}")
+  println("fn greet(name: Str = 'World') : Str { return 'Hello, $${name}!'; }")
+  
+  if(1>0 , 2>1 ; 0 < 1 , 0 > -1 ; 0.1e+0 == 0.1 , 0.1e+1 != 1.0e1) {
+    println(greet())
+    println(greet("Ljos"))
+  } else(0>1) {
+    println("This won't print")
+  } else {
+    println("All tests passed!")
+  }
+
+  for(mut i: Int = 1; i < 5; i = i + 1) {
+    println("i = ${i}")
+  }
+  
+  println(when {
+    1 > 0 => "one is greater than zero",
+    2 < 1 => "two is less than one",
+    3 < 2 => "impossible*2"
+    else => "this is the default case"
+  })
+
+  return 1
+}
+
+main()

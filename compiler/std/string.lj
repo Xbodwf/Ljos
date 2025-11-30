@@ -1,0 +1,169 @@
+# Ljos Standard Library - String Module
+# 字符串操作
+
+import { Int, Bool, Str, Option, Nul } : "/std/core"
+
+# ============ 字符串工具函数 ============
+
+# 获取字符串长度
+export fn len(s: Str) : Int {
+  return __strlen(s)
+}
+
+# 检查字符串是否为空
+export fn isEmpty(s: Str) : Bool {
+  return len(s) == 0
+}
+
+# 检查字符串是否以指定前缀开头
+export fn startsWith(s: Str, prefix: Str) : Bool {
+  return __strStartsWith(s, prefix)
+}
+
+# 检查字符串是否以指定后缀结尾
+export fn endsWith(s: Str, suffix: Str) : Bool {
+  return __strEndsWith(s, suffix)
+}
+
+# 检查字符串是否包含子串
+export fn contains(s: Str, sub: Str) : Bool {
+  return indexOf(s, sub) != -1
+}
+
+# 查找子串位置
+export fn indexOf(s: Str, sub: Str) : Int {
+  return __strIndexOf(s, sub)
+}
+
+# 从后向前查找子串位置
+export fn lastIndexOf(s: Str, sub: Str) : Int {
+  return __strLastIndexOf(s, sub)
+}
+
+# 获取子串
+export fn substring(s: Str, start: Int, end: Int = -1) : Str {
+  return __strSubstring(s, start, end)
+}
+
+# 获取指定位置的字符
+export fn charAt(s: Str, index: Int) : Option<Str> {
+  if (index < 0 ; index >= len(s)) {
+    return nul
+  }
+  return __strCharAt(s, index)
+}
+
+# 转换为大写
+export fn toUpperCase(s: Str) : Str {
+  return __strToUpper(s)
+}
+
+# 转换为小写
+export fn toLowerCase(s: Str) : Str {
+  return __strToLower(s)
+}
+
+# 去除首尾空白
+export fn trim(s: Str) : Str {
+  return __strTrim(s)
+}
+
+# 去除首部空白
+export fn trimStart(s: Str) : Str {
+  return __strTrimStart(s)
+}
+
+# 去除尾部空白
+export fn trimEnd(s: Str) : Str {
+  return __strTrimEnd(s)
+}
+
+# 分割字符串
+export fn split(s: Str, delimiter: Str) : [Str] {
+  return __strSplit(s, delimiter)
+}
+
+# 连接字符串数组
+export fn join(parts: [Str], separator: Str = "") : Str {
+  return __strJoin(parts, separator)
+}
+
+# 替换子串
+export fn replace(s: Str, old: Str, new: Str) : Str {
+  return __strReplace(s, old, new)
+}
+
+# 替换所有匹配的子串
+export fn replaceAll(s: Str, old: Str, new: Str) : Str {
+  return __strReplaceAll(s, old, new)
+}
+
+# 重复字符串
+export fn repeat(s: Str, count: Int) : Str {
+  return __strRepeat(s, count)
+}
+
+# 左填充
+export fn padStart(s: Str, length: Int, pad: Str = " ") : Str {
+  return __strPadStart(s, length, pad)
+}
+
+# 右填充
+export fn padEnd(s: Str, length: Int, pad: Str = " ") : Str {
+  return __strPadEnd(s, length, pad)
+}
+
+# 反转字符串
+export fn reverse(s: Str) : Str {
+  return __strReverse(s)
+}
+
+# ============ 字符串解析 ============
+
+# 解析整数
+export fn parseInt(s: Str, radix: Int = 10) : Option<Int> {
+  return __parseInt(s, radix)
+}
+
+# 解析浮点数
+export fn parseFloat(s: Str) : Option<Float> {
+  return __parseFloat(s)
+}
+
+# ============ StringBuilder - 字符串构建器 ============
+
+export class StringBuilder {
+  mut _parts: [Str]
+  
+  constructor() {
+    this._parts = []
+  }
+  
+  fn append(s: Str) : StringBuilder {
+    this._parts[this._parts.length] = s
+    return this
+  }
+  
+  fn appendLine(s: Str = "") : StringBuilder {
+    this.append(s)
+    this.append("\n")
+    return this
+  }
+  
+  fn clear() : StringBuilder {
+    this._parts = []
+    return this
+  }
+  
+  fn toString() : Str {
+    return join(this._parts)
+  }
+  
+  fn len() : Int {
+    mut total = 0
+    for (part in this._parts) {
+      total = total + len(part)
+    }
+    return total
+  }
+}

@@ -1,0 +1,32 @@
+# Test function return type inference
+
+fn getInt(): Int {
+    return 42
+}
+
+fn getFloat(): Float {
+    return 3.14
+}
+
+fn useReturnValue() {
+    # Should work: function returns Int, assigned to Int
+    const a: Int = getInt()
+    
+    # Should work: function returns Int, Int can convert to Float
+    const b: Float = getInt()
+    
+    # Should work: function returns Float, assigned to Float
+    const c: Float = getFloat()
+    
+    # Should work: function returns Float, Float can convert to Num
+    const d: Num = getFloat()
+}
+
+# Test chained function calls
+fn double(x: Int): Int {
+    return x * 2
+}
+
+fn testChain() {
+    const result: Int = double(double(5))
+}

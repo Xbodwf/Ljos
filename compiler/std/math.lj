@@ -1,0 +1,210 @@
+# Ljos Standard Library - Math Module
+# 数学函数
+
+import { Int, Float, Bool } : "/std/core"
+
+# ============ 常量 ============
+
+export const PI: Float = 3.141592653589793
+export const E: Float = 2.718281828459045
+export const TAU: Float = 6.283185307179586
+export const LN2: Float = 0.6931471805599453
+export const LN10: Float = 2.302585092994046
+export const LOG2E: Float = 1.4426950408889634
+export const LOG10E: Float = 0.4342944819032518
+export const SQRT2: Float = 1.4142135623730951
+export const SQRT1_2: Float = 0.7071067811865476
+
+export const MAX_INT: Int = 9007199254740991
+export const MIN_INT: Int = -9007199254740991
+export const MAX_FLOAT: Float = 1.7976931348623157e308
+export const MIN_FLOAT: Float = 5e-324
+export const INFINITY: Float = __infinity()
+export const NEG_INFINITY: Float = -__infinity()
+export const NAN: Float = __nan()
+
+# ============ 基本运算 ============
+
+export fn abs(x: Float) : Float {
+  return __mathAbs(x)
+}
+
+export fn sign(x: Float) : Int {
+  return if (x > 0.0) 1 else(x < 0.0) -1 else 0
+}
+
+export fn min(a: Float, b: Float) : Float {
+  return if (a < b) a else b
+}
+
+export fn max(a: Float, b: Float) : Float {
+  return if (a > b) a else b
+}
+
+export fn clamp(value: Float, minVal: Float, maxVal: Float) : Float {
+  return min(max(value, minVal), maxVal)
+}
+
+# ============ 取整函数 ============
+
+export fn floor(x: Float) : Int {
+  return __mathFloor(x)
+}
+
+export fn ceil(x: Float) : Int {
+  return __mathCeil(x)
+}
+
+export fn round(x: Float) : Int {
+  return __mathRound(x)
+}
+
+export fn trunc(x: Float) : Int {
+  return __mathTrunc(x)
+}
+
+# ============ 幂和根 ============
+
+export fn pow(base: Float, exp: Float) : Float {
+  return __mathPow(base, exp)
+}
+
+export fn sqrt(x: Float) : Float {
+  return __mathSqrt(x)
+}
+
+export fn cbrt(x: Float) : Float {
+  return __mathCbrt(x)
+}
+
+export fn exp(x: Float) : Float {
+  return __mathExp(x)
+}
+
+export fn expm1(x: Float) : Float {
+  return __mathExpm1(x)
+}
+
+# ============ 对数函数 ============
+
+export fn log(x: Float) : Float {
+  return __mathLog(x)
+}
+
+export fn log2(x: Float) : Float {
+  return __mathLog2(x)
+}
+
+export fn log10(x: Float) : Float {
+  return __mathLog10(x)
+}
+
+export fn log1p(x: Float) : Float {
+  return __mathLog1p(x)
+}
+
+# ============ 三角函数 ============
+
+export fn sin(x: Float) : Float {
+  return __mathSin(x)
+}
+
+export fn cos(x: Float) : Float {
+  return __mathCos(x)
+}
+
+export fn tan(x: Float) : Float {
+  return __mathTan(x)
+}
+
+export fn asin(x: Float) : Float {
+  return __mathAsin(x)
+}
+
+export fn acos(x: Float) : Float {
+  return __mathAcos(x)
+}
+
+export fn atan(x: Float) : Float {
+  return __mathAtan(x)
+}
+
+export fn atan2(y: Float, x: Float) : Float {
+  return __mathAtan2(y, x)
+}
+
+# ============ 双曲函数 ============
+
+export fn sinh(x: Float) : Float {
+  return __mathSinh(x)
+}
+
+export fn cosh(x: Float) : Float {
+  return __mathCosh(x)
+}
+
+export fn tanh(x: Float) : Float {
+  return __mathTanh(x)
+}
+
+export fn asinh(x: Float) : Float {
+  return __mathAsinh(x)
+}
+
+export fn acosh(x: Float) : Float {
+  return __mathAcosh(x)
+}
+
+export fn atanh(x: Float) : Float {
+  return __mathAtanh(x)
+}
+
+# ============ 角度转换 ============
+
+export fn toRadians(degrees: Float) : Float {
+  return degrees * PI / 180.0
+}
+
+export fn toDegrees(radians: Float) : Float {
+  return radians * 180.0 / PI
+}
+
+# ============ 其他函数 ============
+
+export fn hypot(x: Float, y: Float) : Float {
+  return __mathHypot(x, y)
+}
+
+export fn fmod(x: Float, y: Float) : Float {
+  return x - trunc(x / y) * y
+}
+
+export fn lerp(a: Float, b: Float, t: Float) : Float {
+  return a + (b - a) * t
+}
+
+export fn isNaN(x: Float) : Bool {
+  return __isNaN(x)
+}
+
+export fn isFinite(x: Float) : Bool {
+  return __isFinite(x)
+}
+
+export fn isInfinite(x: Float) : Bool {
+  return !isFinite(x) , !isNaN(x)
+}
+
+# ============ 随机数 ============
+
+export fn random() : Float {
+  return __mathRandom()
+}
+
+export fn randomInt(min: Int, max: Int) : Int {
+  return floor(random() * (max - min + 1)) + min
+}
+
+export fn randomFloat(min: Float, max: Float) : Float {
+  return random() * (max - min) + min
+}

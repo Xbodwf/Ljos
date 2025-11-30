@@ -1,0 +1,64 @@
+# Test type checking features
+
+# 1. Test function return type checking
+fn add(a: Int, b: Int): Int {
+    return a + b
+}
+
+fn getFloat(): Float {
+    return 3.14
+}
+
+fn getString(): Str {
+    return "hello"
+}
+
+# 2. Test implicit type conversion
+fn testImplicitConversion() {
+    const x: Float = 42
+    const y: Num = 3.14
+    const z: Num = 100
+}
+
+# 3. Test assignment compatibility
+fn testAssignment() {
+    mut a: Int = 10
+    a = 20
+    
+    mut b: Float = 1.5
+    b = 2
+}
+
+# 4. Test expression type inference
+fn testExpressionTypes() {
+    const a = 1 + 2
+    const b = 1.0 + 2
+    const c = 1 < 2
+    const d = !true
+    const e = "hello" + "world"
+}
+
+# 5. Test type cast expression
+fn testTypeCast() {
+    const x: Int = 42
+    const y = x of Float
+    const z = 3.14 of Int
+}
+
+# 6. Test class return type
+class Point {
+    mut x: Int = 0
+    mut y: Int = 0
+    
+    fn getX(): Int {
+        return this.x
+    }
+    
+    fn setX(value: Int) {
+        this.x = value
+    }
+}
+
+fn createPoint(): Point {
+    return new Point()
+}

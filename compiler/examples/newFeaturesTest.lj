@@ -1,0 +1,89 @@
+# Test file for new features
+
+# 1. typeof keyword
+const x = 42
+const t1 = typeof x        # typeof without parentheses
+const t2 = typeof(x)       # typeof with parentheses
+
+# 2. instanceof keyword
+class Animal {}
+const a = new Animal()
+const isAnimal = a instanceof Animal
+
+# 3. void and delete
+const v = void 0
+# delete obj.prop  # (would need object to test)
+
+# 4. this and super
+class Parent {
+  mut name: str
+  constructor(name: str) {
+    this.name = name
+  }
+  fn greet(): str {
+    return "Hello, " + this.name
+  }
+}
+
+class Child extends Parent {
+  constructor(name: str) {
+    super(name)  # call parent constructor
+  }
+  fn greet(): str {
+    return super.greet() + "!"  # call parent method
+  }
+}
+
+# 5. while loop
+mut i = 0
+while (i < 5) {
+  i = i + 1
+}
+
+# 6. do-while loop
+mut j = 0
+do {
+  j = j + 1
+} while (j < 3)
+
+# 7. when statement (replaces switch)
+const day = 1
+when (day) {
+  1 => {
+    const msg1 = "Monday"
+  }
+  2 => {
+    const msg2 = "Tuesday"
+  }
+  else => {
+    const msg3 = "Other"
+  }
+}
+
+# 8. null (no undefined)
+const n = null
+# const u = undefined  <-- removed
+
+# 9. == should become === in JS output
+const eq1 = 1 == 1   # becomes 1 === 1
+const eq2 = 1 != 2   # becomes 1 !== 2
+
+# 10. if with comma (,) for AND and semicolon (;) for OR
+const a1 = true
+const b1 = false
+const c1 = true
+const d1 = false
+
+# In if conditions: , means AND, ; means OR
+if (a1, c1) {
+  const result1 = "both true"
+}
+
+if (b1; c1 ) {
+  const result2 = "at least one true"
+}
+
+# Outside if (normal expressions): & for AND, | for OR
+const andResult = a1 & c1
+const orResult = b1 | c1
+

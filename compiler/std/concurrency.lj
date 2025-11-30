@@ -1,0 +1,229 @@
+# Ljos Standard Library - Concurrency Module
+# 并发编程支持
+
+import { Int, Bool, Option, Nul } : "/std/core"
+
+# ============ Channel - 通道 ============
+
+export class Channel<T> {
+  mut _buffer: [T]
+  mut _capacity: Int
+  mut _closed: Bool
+  
+  constructor(capacity: Int = 0) {
+    this._buffer = []
+    this._capacity = capacity
+    this._closed = false
+  }
+  
+  fn send(value: T) : Bool {
+    if (this._closed) {
+      return false
+    }
+    this._buffer[this._buffer.length] = value
+    return true
+  }
+  
+  fn receive() : Option<T> {
+    if (this._buffer.length == 0) {
+      return nul
+    }
+    const value = this._buffer[0]
+    this._buffer = this._buffer[1..]
+    return value
+  }
+  
+  fn close() {
+    this._closed = true
+  }
+  
+  fn isClosed() : Bool {
+    return this._closed
+  }
+  
+  fn len() : Int {
+    return this._buffer.length
+  }
+  
+  fn isEmpty() : Bool {
+    return this._buffer.length == 0
+  }
+}
+
+# ============ WaitGroup - 等待组 ============
+
+export class WaitGroup {
+  mut _count: Int
+  
+  constructor() {
+    this._count = 0
+  }
+  
+  fn add(delta: Int = 1) {
+    this._count = this._count + delta
+    if (this._count < 0) {
+      throw Error("WaitGroup counter is negative")
+    }
+  }
+  
+  fn done() {
+    this.add(-1)
+  }
+  
+  fn wait() {
+    # 在实际实现中，这里会阻塞直到 count 为 0
+    # 这里是简化版本
+    for (this._count > 0) {
+      __yield()
+    }
+  }
+}
+
+# ============ Mutex - 互斥锁 ============
+
+export class Mutex {
+  mut _locked: Bool
+  
+  constructor() {
+    this._locked = false
+  }
+  
+  fn lock() {
+    for (this._locked) {
+      __yield()
+    }
+    this._locked = true
+  }
+  
+  fn unlock() {
+    this._locked = false
+  }
+  
+  fn tryLock() : Bool {
+    if (this._locked) {
+      return false
+    }
+    this._locked = true
+    return true
+  }
+  
+  fn withLock<T>(f: () : T) : T {
+    this.lock()
+    try {
+      return f()
+    } catch (e) {
+      this.unlock()
+      throw e
+    }
+    this.unlock()
+  }
+}
+
+# ============ RWMutex - 读写锁 ============
+
+export class RWMutex {
+  mut _readers: Int
+  mut _writer: Bool
+  
+  constructor() {
+    this._readers = 0
+    this._writer = false
+  }
+  
+  fn rLock() {
+    for (this._writer) {
+      __yield()
+    }
+    this._readers = this._readers + 1
+  }
+  
+  fn rUnlock() {
+    this._readers = this._readers - 1
+  }
+  
+  fn lock() {
+    for (this._writer ; this._readers > 0) {
+      __yield()
+    }
+    this._writer = true
+  }
+  
+  fn unlock() {
+    this._writer = false
+  }
+}
+
+# ============ Once - 单次执行 ============
+
+export class Once {
+  mut _done: Bool
+  
+  constructor() {
+    this._done = false
+  }
+  
+  fn do(f: () : Nul) {
+    if (!this._done) {
+      this._done = true
+      f()
+    }
+  }
+}
+
+# ============ Atomic - 原子操作 ============
+
+export class Atomic<T> {
+  mut _value: T
+  mut _mutex: Mutex
+  
+  constructor(value: T) {
+    this._value = value
+    this._mutex = new Mutex()
+  }
+  
+  fn load() : T {
+    return this._value
+  }
+  
+  fn store(value: T) {
+    this._mutex.lock()
+    this._value = value
+    this._mutex.unlock()
+  }
+  
+  fn swap(value: T) : T {
+    this._mutex.lock()
+    const old = this._value
+    this._value = value
+    this._mutex.unlock()
+    return old
+  }
+  
+  fn compareAndSwap(expected: T, desired: T) : Bool {
+    this._mutex.lock()
+    if (this._value == expected) {
+      this._value = desired
+      this._mutex.unlock()
+      return true
+    }
+    this._mutex.unlock()
+    return false
+  }
+}
+
+# ============ 辅助函数 ============
+
+# 创建并启动协程
+export fn spawn(f: () : Nul) {
+  go f()
+}
+
+# 休眠指定毫秒
+export fn sleep(ms: Int) {
+  __sleep(ms)
+}
+
+# 让出执行权
+export fn yield() {
+  __yield()
+}

@@ -1,0 +1,232 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ljos",
+  "scopeName": "source.ljos",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#functions" },
+    { "include": "#types" },
+    { "include": "#variables" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.ljos",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.block.ljos",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        },
+        {
+          "name": "comment.block.documentation.ljos",
+          "begin": "''",
+          "end": "''"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ljos",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.ljos",
+              "match": "\\\\(?:[nrtv\\\\\"$]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})"
+            },
+            {
+              "name": "meta.embedded.expression.ljos",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.begin.ljos" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.end.ljos" }
+              },
+              "patterns": [
+                { "include": "$self" }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.raw.ljos",
+          "begin": "`",
+          "end": "`"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.binary.ljos",
+          "match": "\\b0[bB][01]([01_]*[01])?\\b"
+        },
+        {
+          "name": "constant.numeric.octal.ljos",
+          "match": "\\b0[oO][0-7]([0-7_]*[0-7])?\\b"
+        },
+        {
+          "name": "constant.numeric.hex.ljos",
+          "match": "\\b0[xX][0-9A-Fa-f]([0-9A-Fa-f_]*[0-9A-Fa-f])?\\b"
+        },
+        {
+          "name": "constant.numeric.float.ljos",
+          "match": "\\b[0-9]([0-9_]*[0-9])?\\.([0-9]([0-9_]*[0-9])?)?([eE][+-]?[0-9]([0-9_]*[0-9])?)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.ljos",
+          "match": "\\b[0-9]([0-9_]*[0-9])?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "constant.language.ljos",
+          "match": "\\b(nul|true|false)\\b"
+        },
+        {
+          "name": "storage.modifier.ljos",
+          "match": "\\b(mut|const)\\b"
+        },
+        {
+          "name": "keyword.control.ljos",
+          "match": "\\b(if|else|for|when|break|continue|return|throw|try|catch)\\b"
+        },
+        {
+          "name": "keyword.operator.ljos",
+          "match": "\\b(is|of|in|as)\\b"
+        },
+        {
+          "name": "keyword.other.ljos",
+          "match": "\\b(fn|type|where|go|defer|move|borrow|using|macro)\\b"
+        },
+        {
+          "name": "keyword.control.import.ljos",
+          "match": "\\b(import|export|default)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.ljos",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.ljos",
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.assignment.ljos",
+          "match": "(=|\\+=|-=|\\*=|/=|%=)"
+        },
+        {
+          "name": "keyword.operator.logical.ljos",
+          "match": "(!|&|\\|)"
+        },
+        {
+          "name": "keyword.operator.accessor.ljos",
+          "match": "(\\?\\.|\\.\\.|\\?\\.\\.|\\.)"
+        },
+        {
+          "name": "keyword.operator.arrow.ljos",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.range.ljos",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.xor.ljos",
+          "match": "<>"
+        },
+        {
+          "name": "keyword.operator.optional.ljos",
+          "match": "\\?"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "meta.function.definition.ljos",
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "keyword.other.fn.ljos" },
+            "2": { "name": "entity.name.function.ljos" }
+          }
+        },
+        {
+          "name": "meta.function.call.ljos",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.ljos" }
+          }
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.ljos",
+          "match": "\\b(int|float|str|bool|bytes|nul)\\b"
+        },
+        {
+          "name": "entity.name.type.ljos",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.ljos",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.comma.ljos",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.semicolon.ljos",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.colon.ljos",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.bracket.round.ljos",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.bracket.square.ljos",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.bracket.curly.ljos",
+          "match": "[{}]"
+        }
+      ]
+    }
+  }
+}

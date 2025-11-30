@@ -1,0 +1,394 @@
+# Ljos Standard Library - Collections Module
+# 集合类型
+
+import { Int, Str, Bool, Option, Nul } : "/std/core"
+
+# ============ Vec - 动态数组 ============
+
+export class Vec<T> {
+  mut _data: [T]
+  mut _len: Int
+  
+  constructor() {
+    this._data = []
+    this._len = 0
+  }
+  
+  static fn from(items: [T]) : Vec<T> {
+    const vec = new Vec<T>()
+    for (item in items) {
+      vec.push(item)
+    }
+    return vec
+  }
+  
+  fn len() : Int {
+    return this._len
+  }
+  
+  fn isEmpty() : Bool {
+    return this._len == 0
+  }
+  
+  fn push(item: T) {
+    this._data[this._len] = item
+    this._len = this._len + 1
+  }
+  
+  fn pop() : Option<T> {
+    if (this._len == 0) {
+      return nul
+    }
+    this._len = this._len - 1
+    return this._data[this._len]
+  }
+  
+  fn get(index: Int) : Option<T> {
+    if (index < 0 ; index >= this._len) {
+      return nul
+    }
+    return this._data[index]
+  }
+  
+  fn set(index: Int, value: T) : Bool {
+    if (index < 0 ; index >= this._len) {
+      return false
+    }
+    this._data[index] = value
+    return true
+  }
+  
+  fn first() : Option<T> {
+    return this.get(0)
+  }
+  
+  fn last() : Option<T> {
+    return this.get(this._len - 1)
+  }
+  
+  fn clear() {
+    this._data = []
+    this._len = 0
+  }
+  
+  fn toArray() : [T] {
+    return this._data[0..this._len]
+  }
+  
+  fn map<U>(f: (T) : U) : Vec<U> {
+    const result = new Vec<U>()
+    for (mut i = 0; i < this._len; i = i + 1) {
+      result.push(f(this._data[i]))
+    }
+    return result
+  }
+  
+  fn filter(predicate: (T) : Bool) : Vec<T> {
+    const result = new Vec<T>()
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (predicate(this._data[i])) {
+        result.push(this._data[i])
+      }
+    }
+    return result
+  }
+  
+  fn forEach(f: (T) : Nul) {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      f(this._data[i])
+    }
+  }
+  
+  fn find(predicate: (T) : Bool) : Option<T> {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (predicate(this._data[i])) {
+        return this._data[i]
+      }
+    }
+    return nul
+  }
+  
+  fn contains(item: T) : Bool {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._data[i] == item) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  fn reverse() : Vec<T> {
+    const result = new Vec<T>()
+    for (mut i = this._len - 1; i >= 0; i = i - 1) {
+      result.push(this._data[i])
+    }
+    return result
+  }
+}
+
+# ============ Map - 键值映射 ============
+
+export class Map<K, V> {
+  mut _keys: [K]
+  mut _values: [V]
+  mut _len: Int
+  
+  constructor() {
+    this._keys = []
+    this._values = []
+    this._len = 0
+  }
+  
+  fn len() : Int {
+    return this._len
+  }
+  
+  fn isEmpty() : Bool {
+    return this._len == 0
+  }
+  
+  fn set(key: K, value: V) {
+    # 检查是否已存在
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._keys[i] == key) {
+        this._values[i] = value
+        return
+      }
+    }
+    # 新增
+    this._keys[this._len] = key
+    this._values[this._len] = value
+    this._len = this._len + 1
+  }
+  
+  fn get(key: K) : Option<V> {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._keys[i] == key) {
+        return this._values[i]
+      }
+    }
+    return nul
+  }
+  
+  fn has(key: K) : Bool {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._keys[i] == key) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  fn delete(key: K) : Bool {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._keys[i] == key) {
+        # 移动后面的元素
+        for (mut j = i; j < this._len - 1; j = j + 1) {
+          this._keys[j] = this._keys[j + 1]
+          this._values[j] = this._values[j + 1]
+        }
+        this._len = this._len - 1
+        return true
+      }
+    }
+    return false
+  }
+  
+  fn keys() : [K] {
+    return this._keys[0..this._len]
+  }
+  
+  fn values() : [V] {
+    return this._values[0..this._len]
+  }
+  
+  fn clear() {
+    this._keys = []
+    this._values = []
+    this._len = 0
+  }
+  
+  fn getOrDefault(key: K, defaultValue: V) : V {
+    const value = this.get(key)
+    return if (value is nul) defaultValue else value
+  }
+}
+
+# ============ Set - 集合 ============
+
+export class Set<T> {
+  mut _items: [T]
+  mut _len: Int
+  
+  constructor() {
+    this._items = []
+    this._len = 0
+  }
+  
+  static fn from(items: [T]) : Set<T> {
+    const set = new Set<T>()
+    for (item in items) {
+      set.add(item)
+    }
+    return set
+  }
+  
+  fn len() : Int {
+    return this._len
+  }
+  
+  fn isEmpty() : Bool {
+    return this._len == 0
+  }
+  
+  fn add(item: T) : Bool {
+    if (this.has(item)) {
+      return false
+    }
+    this._items[this._len] = item
+    this._len = this._len + 1
+    return true
+  }
+  
+  fn has(item: T) : Bool {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._items[i] == item) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  fn delete(item: T) : Bool {
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (this._items[i] == item) {
+        for (mut j = i; j < this._len - 1; j = j + 1) {
+          this._items[j] = this._items[j + 1]
+        }
+        this._len = this._len - 1
+        return true
+      }
+    }
+    return false
+  }
+  
+  fn clear() {
+    this._items = []
+    this._len = 0
+  }
+  
+  fn toArray() : [T] {
+    return this._items[0..this._len]
+  }
+  
+  fn union(other: Set<T>) : Set<T> {
+    const result = Set.from(this.toArray())
+    for (item in other.toArray()) {
+      result.add(item)
+    }
+    return result
+  }
+  
+  fn intersection(other: Set<T>) : Set<T> {
+    const result = new Set<T>()
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (other.has(this._items[i])) {
+        result.add(this._items[i])
+      }
+    }
+    return result
+  }
+  
+  fn difference(other: Set<T>) : Set<T> {
+    const result = new Set<T>()
+    for (mut i = 0; i < this._len; i = i + 1) {
+      if (!other.has(this._items[i])) {
+        result.add(this._items[i])
+      }
+    }
+    return result
+  }
+}
+
+# ============ Stack - 栈 ============
+
+export class Stack<T> {
+  mut _vec: Vec<T>
+  
+  constructor() {
+    this._vec = new Vec<T>()
+  }
+  
+  fn len() : Int {
+    return this._vec.len()
+  }
+  
+  fn isEmpty() : Bool {
+    return this._vec.isEmpty()
+  }
+  
+  fn push(item: T) {
+    this._vec.push(item)
+  }
+  
+  fn pop() : Option<T> {
+    return this._vec.pop()
+  }
+  
+  fn peek() : Option<T> {
+    return this._vec.last()
+  }
+  
+  fn clear() {
+    this._vec.clear()
+  }
+}
+
+# ============ Queue - 队列 ============
+
+export class Queue<T> {
+  mut _items: [T]
+  mut _head: Int
+  mut _tail: Int
+  
+  constructor() {
+    this._items = []
+    this._head = 0
+    this._tail = 0
+  }
+  
+  fn len() : Int {
+    return this._tail - this._head
+  }
+  
+  fn isEmpty() : Bool {
+    return this._head == this._tail
+  }
+  
+  fn enqueue(item: T) {
+    this._items[this._tail] = item
+    this._tail = this._tail + 1
+  }
+  
+  fn dequeue() : Option<T> {
+    if (this.isEmpty()) {
+      return nul
+    }
+    const item = this._items[this._head]
+    this._head = this._head + 1
+    return item
+  }
+  
+  fn peek() : Option<T> {
+    if (this.isEmpty()) {
+      return nul
+    }
+    return this._items[this._head]
+  }
+  
+  fn clear() {
+    this._items = []
+    this._head = 0
+    this._tail = 0
+  }
+}

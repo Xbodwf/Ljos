@@ -1,0 +1,66 @@
+# Ljos Standard Library - IO Module
+# 输入输出操作
+
+import { Str, Option, Nul } : "/std/core"
+
+# ============ 标准输出 ============
+
+# 打印一行（带换行）
+export fn println(args...) {
+  __println(args...)
+}
+
+# 打印（不带换行）
+export fn print(args...) {
+  __print(args...)
+}
+
+# 格式化打印
+export fn printf(format: Str, args...) {
+  print(__format(format, args...))
+}
+
+# ============ 标准输入 ============
+
+# 读取一行输入
+export fn readln() : Str {
+  return __readln()
+}
+
+# 读取一行并尝试解析为整数
+export fn readInt() : Option<Int> {
+  const line = readln()
+  return __parseInt(line)
+}
+
+# 读取一行并尝试解析为浮点数
+export fn readFloat() : Option<Float> {
+  const line = readln()
+  return __parseFloat(line)
+}
+
+# ============ 标准错误 ============
+
+# 输出到标准错误
+export fn eprintln(args...) {
+  __eprintln(args...)
+}
+
+export fn eprint(args...) {
+  __eprint(args...)
+}
+
+# ============ 格式化 ============
+
+# 格式化字符串
+export fn format(template: Str, args...) : Str {
+  return __format(template, args...)
+}
+
+# ============ 调试输出 ============
+
+# 调试打印（带文件名和行号）
+export fn dbg(value) {
+  __dbg(value)
+  return value
+}

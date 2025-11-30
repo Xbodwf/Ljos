@@ -1,0 +1,11 @@
+# Ljos Standard Library - Index
+# 标准库入口文件
+
+# 重导出所有模块
+export * : "/std/core"
+export * : "/std/io"
+export * : "/std/string"
+export * : "/std/math"
+export * : "/std/collections"
+export * : "/std/concurrency"
+export * : "/std/fs"
