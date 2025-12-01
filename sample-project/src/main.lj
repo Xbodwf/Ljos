@@ -1,0 +1,33 @@
+# Ljos Sample Project - Main Entry Point
+
+import { println } : "/std/io"
+import { Person } : "./models/person"
+import { greet } : "./utils/greeting"
+
+fn main() {
+  println("=== Ljos Sample Project ===")
+  println("")
+  
+  # Create a person
+  const alice = new Person("Alice", 25)
+  const bob = new Person("Bob", 30)
+  
+  # Greet them
+  println(greet(alice.getName()))
+  println(greet(bob.getName()))
+  
+  # Show info
+  println("")
+  println("Person info:")
+  println(alice.getInfo())
+  println(bob.getInfo())
+  
+  # Test typeof
+  println("")
+  println("Type checking:")
+  println("typeof alice = " + typeof(alice))
+  println("typeof 42 = " + typeof(42))
+  println("typeof 'hello' = " + typeof("hello"))
+}
+
+main()

@@ -7,7 +7,7 @@ fn greet(name: Str = "World") : Str {
   return "Hello, ${name}!"
 }
 
-fn main() {
+fn main(): Int {
   println("println")
   println("fn main() {}")
   println("fn greet(name: Str = 'World') : Str { return 'Hello, $${name}!'; }")

@@ -1,0 +1,29 @@
+# Test access modifiers
+
+import { println } : "/std/io"
+
+class Person {
+  private const name: Str = ""
+  protected mut age: Int = 0
+  public const id: Int = 1
+  
+  constructor(name: Str, age: Int) {
+    this.name = name
+    this.age = age
+  }
+  
+  public fn getName(): Str {
+    return this.name
+  }
+  
+  private fn secret(): Str {
+    return "secret"
+  }
+  
+  protected fn getAge(): Int {
+    return this.age
+  }
+}
+
+const p = new Person("Alice", 30)
+println(p.getName())

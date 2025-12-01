@@ -1,0 +1,9 @@
+# Greeting utilities
+
+export fn greet(name: Str): Str {
+  return "Hello, ${name}!"
+}
+
+export fn farewell(name: Str): Str {
+  return "Goodbye, ${name}!"
+}

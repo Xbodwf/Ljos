@@ -1,0 +1,22 @@
+# Ljos Project Configuration
+
+import { defineConfig } : "/std/config"
+
+export default defineConfig({
+  compilerOptions: {
+    outDir: "./dist",
+    rootDir: "./src",
+    target: "es2022",
+    module: "esm",
+    sourceMap: true,
+    prelude: "none",
+    strict: true
+  },
+  buildOptions: {
+    target: "js",
+    entry: "dist/main.js",
+    executableName: "ljos-sample"
+  },
+  include: ["src/**/*.lj"],
+  exclude: ["node_modules", "dist"]
+})

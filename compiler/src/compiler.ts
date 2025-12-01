@@ -5,21 +5,9 @@ import { Parser, ParserError } from './parser';
 import { CodeGenerator } from './codegen';
 import { Program } from './ast';
 import { TypeChecker } from './typechecker';
+import { CompilerOptions } from './config';
 
-export interface CompilerOptions {
-  outDir?: string;
-  sourceMap?: boolean;
-  minify?: boolean;
-  target?: 'es2020' | 'es2021' | 'es2022';
-  /** 
-   * Prelude mode:
-   * - 'none': No automatic imports (pure mode, like Nyalang)
-   * - 'core': Auto-import core types (Int, Float, Bool, Str, Nul, Option, Result)
-   * - 'full': Auto-import core types + io (println, print)
-   * Default: 'none'
-   */
-  prelude?: 'none' | 'core' | 'full';
-}
+export type { CompilerOptions };
 
 export interface CompileResult {
   success: boolean;
@@ -401,33 +389,5 @@ export class Compiler {
   }
 }
 
-// Configuration file handling
-export interface LjosConfig {
-  compilerOptions?: CompilerOptions;
-  include?: string[];
-  exclude?: string[];
-  extends?: string;
-}
-
-export function loadConfig(configPath?: string): LjosConfig {
-  const possiblePaths = configPath
-    ? [configPath]
-    : ['.ljconfig.json', '.ljconfig.lj'];
-
-  for (const p of possiblePaths) {
-    const fullPath = path.resolve(p);
-    if (fs.existsSync(fullPath)) {
-      if (p.endsWith('.json')) {
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        return JSON.parse(content);
-      } else if (p.endsWith('.lj')) {
-        // For .lj config, we need to compile and evaluate it
-        // For now, just return default config
-        console.warn('Note: .lj config files are not yet fully supported');
-        return {};
-      }
-    }
-  }
-
-  return {};
-}
+// Re-export config types and functions from config.ts
+export { LjosConfig, loadConfig, CompilerOptions as ConfigCompilerOptions } from './config';

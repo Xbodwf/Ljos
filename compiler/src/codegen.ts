@@ -3,14 +3,28 @@ import * as AST from './ast';
 export class CodeGenerator {
   private indent = 0;
   private output = '';
+  private usesTypeOf = false; // Track if typeof is used
+  private stdLibPath = './runtime/std'; // Default relative path
+
+  constructor(options?: { stdLibPath?: string }) {
+    if (options?.stdLibPath) {
+      this.stdLibPath = options.stdLibPath;
+    }
+  }
 
   generate(program: AST.Program): string {
     this.output = '';
     this.indent = 0;
+    this.usesTypeOf = false;
 
     for (const stmt of program.body) {
       this.output += this.generateStatement(stmt);
       this.output += '\n';
+    }
+
+    // Prepend typeOf import if needed
+    if (this.usesTypeOf) {
+      this.output = `import { typeOf as __ljos_typeOf } from "${this.stdLibPath}/core.js";\n` + this.output;
     }
 
     return this.output;
@@ -128,16 +142,20 @@ export class CodeGenerator {
             }
             return p.name;
           }).join(', ');
-          const prefix = member.isStatic ? 'static ' : '';
-          body += this.getIndent() + `${prefix}${member.name}(${params}) ` + this.generateBlockStatement(member.body) + '\n';
+          const staticPrefix = member.isStatic ? 'static ' : '';
+          // Use # prefix for private methods (ES2022)
+          const methodName = member.accessibility === 'private' ? `#${member.name}` : member.name;
+          body += this.getIndent() + `${staticPrefix}${methodName}(${params}) ` + this.generateBlockStatement(member.body) + '\n';
           break;
         }
         case 'FieldDeclaration': {
-          const prefix = member.isStatic ? 'static ' : '';
+          const staticPrefix = member.isStatic ? 'static ' : '';
+          // Use # prefix for private fields (ES2022)
+          const fieldName = member.accessibility === 'private' ? `#${member.name}` : member.name;
           if (member.init) {
-            body += this.getIndent() + `${prefix}${member.name} = ${this.generateExpression(member.init)};\n`;
+            body += this.getIndent() + `${staticPrefix}${fieldName} = ${this.generateExpression(member.init)};\n`;
           } else {
-            body += this.getIndent() + `${prefix}${member.name};\n`;
+            body += this.getIndent() + `${staticPrefix}${fieldName};\n`;
           }
           break;
         }
@@ -526,7 +544,7 @@ export class CodeGenerator {
     if (source.startsWith('/std/')) {
       // Standard library - map to runtime/std/*.js
       const moduleName = source.slice(5); // Remove '/std/'
-      source = `./runtime/std/${moduleName}.js`;
+      source = `${this.stdLibPath}/${moduleName}.js`;
     }
 
     return this.getIndent() + `import ${importClause} from "${source}";`;
@@ -620,7 +638,8 @@ export class CodeGenerator {
       case 'WhenExpression':
         return this.generateWhenExpression(expr);
       case 'TypeofExpression':
-        return `typeof ${this.generateExpression(expr.argument)}`;
+        this.usesTypeOf = true;
+        return `__ljos_typeOf(${this.generateExpression(expr.argument)})`;
       case 'InstanceofExpression':
         return `(${this.generateExpression(expr.left)} instanceof ${this.generateExpression(expr.right)})`;
       case 'VoidExpression':

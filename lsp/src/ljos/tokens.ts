@@ -134,6 +134,29 @@ export interface Token {
   column: number;
 }
 
+// Reserved words that cannot be used as identifiers
+export const RESERVED_WORDS: Set<string> = new Set([
+  // Ljos keywords
+  'nul', 'true', 'false', 'mut', 'const', 'class', 'abstract', 'enum',
+  'extends', 'implements', 'static', 'constructor', 'new', 'if', 'else',
+  'for', 'when', 'break', 'continue', 'return', 'throw', 'is', 'of',
+  'fn', 'import', 'export', 'from', 'default', 'as', 'in', 'try', 'catch',
+  'type', 'interface', 'where', 'go', 'defer', 'move', 'borrow', 'using',
+  'macro', 'await', 'chan', 'typeof', 'instanceof', 'void', 'delete',
+  'while', 'do', 'case', 'finally', 'async', 'yield', 'let', 'var',
+  'this', 'super', 'private', 'protected', 'public', 'readonly', 'get', 'set', 'null',
+]);
+
+/**
+ * Check if a name is a reserved word
+ */
+export function isReservedWord(name: string): boolean {
+  return RESERVED_WORDS.has(name);
+}
+
+// Access modifier type
+export type AccessModifier = 'public' | 'private' | 'protected';
+
 export const KEYWORDS: Record<string, TokenType> = {
   'nul': TokenType.NUL,
   'true': TokenType.TRUE,

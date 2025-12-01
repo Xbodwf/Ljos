@@ -424,7 +424,11 @@ export class TypeChecker {
         return { kind: 'array', elementType: { kind: 'unknown' } };
       case 'ObjectExpression':
         for (const p of expr.properties) {
-          this.checkExpression(p.key, scope, filename, errors);
+          // 对象字面量的键如果是标识符，不需要在作用域中查找
+          // 只有计算属性（如 [expr]: value）才需要检查键表达式
+          if (p.key.type !== 'Identifier') {
+            this.checkExpression(p.key, scope, filename, errors);
+          }
           this.checkExpression(p.value, scope, filename, errors);
         }
         return { kind: 'unknown' };

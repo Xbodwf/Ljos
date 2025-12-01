@@ -1,11 +1,13 @@
-import { Token, TokenType } from './tokens';
+import { Token, TokenType, isReservedWord } from './tokens';
 import { Lexer } from './lexer';
 import * as AST from './ast';
 
 export class ParserError extends Error {
-  constructor(message: string, public token: Token) {
+  code: string;
+  constructor(message: string, public token: Token, code: string = 'E0000') {
     super(`Parser Error at ${token.line}:${token.column}: ${message}`);
     this.name = 'ParserError';
+    this.code = code;
   }
 }
 
@@ -108,7 +110,13 @@ export class Parser {
   private functionDeclaration(isExported = false): AST.FunctionDeclaration {
     this.advance(); // consume 'fn'
     
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected function name').value;
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected function name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as function name`, nameToken, 'E1001');
+    }
 
     let typeParameters: string[] | undefined;
     if (this.match(TokenType.LT)) {
@@ -144,7 +152,13 @@ export class Parser {
     }
 
     this.consume(TokenType.CLASS, "Expected 'class'");
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected class name').value;
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected class name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as class name`, nameToken, 'E1001');
+    }
 
     let superClass: AST.Identifier | undefined;
     if (this.match(TokenType.EXTENDS)) {
@@ -170,6 +184,22 @@ export class Parser {
         memberDecorators = this.decorators();
       }
 
+      // Parse access modifier (public, private, protected)
+      let accessibility: AST.AccessModifier | undefined;
+      if (this.match(TokenType.PUBLIC)) {
+        accessibility = 'public';
+      } else if (this.match(TokenType.PRIVATE)) {
+        accessibility = 'private';
+      } else if (this.match(TokenType.PROTECTED)) {
+        accessibility = 'protected';
+      }
+
+      // Parse readonly modifier
+      let isReadonly = false;
+      if (this.match(TokenType.READONLY)) {
+        isReadonly = true;
+      }
+
       let isStatic = false;
       if (this.match(TokenType.STATIC)) {
         isStatic = true;
@@ -178,13 +208,13 @@ export class Parser {
       if (this.check(TokenType.ABSTRACT)) {
         this.advance(); // consume 'abstract'
         this.consume(TokenType.FN, "Expected 'fn' after 'abstract' in class body");
-        body.push(this.abstractMethodDeclaration(isStatic, memberDecorators));
+        body.push(this.abstractMethodDeclaration(isStatic, accessibility, memberDecorators));
       } else if (this.check(TokenType.FN)) {
-        body.push(this.methodDeclaration(isStatic, memberDecorators));
+        body.push(this.methodDeclaration(isStatic, accessibility, memberDecorators));
       } else if (this.check(TokenType.CONST) || this.check(TokenType.MUT)) {
-        body.push(this.fieldDeclaration(isStatic, memberDecorators));
+        body.push(this.fieldDeclaration(isStatic, isReadonly, accessibility, memberDecorators));
       } else if (this.check(TokenType.CONSTRUCTOR)) {
-        body.push(this.constructorDeclaration(memberDecorators));
+        body.push(this.constructorDeclaration(accessibility, memberDecorators));
       } else {
         throw new ParserError('Unexpected token in class body', this.peek());
       }
@@ -195,9 +225,15 @@ export class Parser {
     return { type: 'ClassDeclaration', name, isAbstract, superClass, implements: implementsList, body, decorators };
   }
 
-  private methodDeclaration(isStatic: boolean, decorators?: AST.Expression[]): AST.MethodDeclaration {
+  private methodDeclaration(isStatic: boolean, accessibility?: AST.AccessModifier, decorators?: AST.Expression[]): AST.MethodDeclaration {
     this.advance(); // consume 'fn'
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected method name').value;
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected method name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as method name`, nameToken, 'E1001');
+    }
 
     this.consume(TokenType.LPAREN, "Expected '('");
     const params = this.parameterList();
@@ -209,11 +245,17 @@ export class Parser {
     }
 
     const body = this.blockStatement();
-    return { type: 'MethodDeclaration', name, params, returnType, body, isStatic, decorators };
+    return { type: 'MethodDeclaration', name, params, returnType, body, isStatic, accessibility, decorators };
   }
 
-  private abstractMethodDeclaration(isStatic: boolean, decorators?: AST.Expression[]): AST.MethodDeclaration {
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected method name').value;
+  private abstractMethodDeclaration(isStatic: boolean, accessibility?: AST.AccessModifier, decorators?: AST.Expression[]): AST.MethodDeclaration {
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected method name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as method name`, nameToken, 'E1001');
+    }
 
     this.consume(TokenType.LPAREN, "Expected '('");
     const params = this.parameterList();
@@ -227,12 +269,18 @@ export class Parser {
     // Optional semicolon after abstract method signature
     this.match(TokenType.SEMICOLON);
 
-    return { type: 'MethodDeclaration', name, params, returnType, isStatic, isAbstract: true, decorators };
+    return { type: 'MethodDeclaration', name, params, returnType, isStatic, isAbstract: true, accessibility, decorators };
   }
 
-  private fieldDeclaration(isStatic: boolean, decorators?: AST.Expression[]): AST.FieldDeclaration {
+  private fieldDeclaration(isStatic: boolean, isReadonly: boolean, accessibility?: AST.AccessModifier, decorators?: AST.Expression[]): AST.FieldDeclaration {
     const kind = this.advance().type === TokenType.CONST ? 'const' : 'mut';
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected field name').value;
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected field name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as field name`, nameToken, 'E1001');
+    }
 
     let typeAnnotation: AST.TypeAnnotation | undefined;
     if (this.match(TokenType.COLON)) {
@@ -244,17 +292,17 @@ export class Parser {
       init = this.assignmentExpression();
     }
 
-    return { type: 'FieldDeclaration', name, kind, typeAnnotation, init, isStatic, decorators };
+    return { type: 'FieldDeclaration', name, kind, typeAnnotation, init, isStatic, isReadonly, accessibility, decorators };
   }
 
-  private constructorDeclaration(decorators?: AST.Expression[]): AST.ConstructorDeclaration {
+  private constructorDeclaration(accessibility?: AST.AccessModifier, decorators?: AST.Expression[]): AST.ConstructorDeclaration {
     this.consume(TokenType.CONSTRUCTOR, "Expected 'constructor'");
     this.consume(TokenType.LPAREN, "Expected '('");
     const params = this.parameterList();
     this.consume(TokenType.RPAREN, "Expected ')'");
 
     const body = this.blockStatement();
-    return { type: 'ConstructorDeclaration', params, body, decorators };
+    return { type: 'ConstructorDeclaration', params, body, accessibility, decorators };
   }
 
   private decorators(): AST.Expression[] {
@@ -325,7 +373,13 @@ export class Parser {
 
   private variableDeclaration(): AST.VariableDeclaration {
     const kind = this.advance().type === TokenType.CONST ? 'const' : 'mut';
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected variable name').value;
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected variable name');
+    const name = nameToken.value;
+    
+    // Check for reserved words
+    if (isReservedWord(name)) {
+      throw new ParserError(`Cannot use reserved word '${name}' as variable name`, nameToken, 'E1001');
+    }
 
     let typeAnnotation: AST.TypeAnnotation | undefined;
     if (this.match(TokenType.COLON)) {

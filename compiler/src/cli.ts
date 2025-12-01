@@ -2,7 +2,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Compiler, loadConfig, CompilerOptions } from './compiler';
+import { Compiler } from './compiler';
+import { loadConfig, CompilerOptions } from './config';
+import { ProjectCompiler, initProject, isLjosProject } from './project';
 
 interface CliOptions {
   input?: string;
@@ -12,6 +14,9 @@ interface CliOptions {
   version?: boolean;
   config?: string;
   prelude?: 'none' | 'core' | 'full';
+  init?: boolean;
+  initFormat?: 'json' | 'lj';
+  project?: boolean; // Compile entire project
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -54,6 +59,18 @@ function parseArgs(args: string[]): CliOptions {
       case '--no-prelude':
         options.prelude = 'none';
         break;
+      case '--init':
+        options.init = true;
+        break;
+      case '--init-lj':
+        options.init = true;
+        options.initFormat = 'lj';
+        break;
+      case '-b':
+      case '--build':
+      case '--project':
+        options.project = true;
+        break;
       default:
         if (!arg.startsWith('-')) {
           options.input = arg;
@@ -68,16 +85,22 @@ function printHelp(): void {
   console.log(`
 Ljos Compiler (ljc) v1.0.0
 
-Usage: ljc [options] <input-file>
+Usage: 
+  ljc [options] <input-file>     Compile a single file
+  ljc -b [options]               Compile entire project (project mode)
+  ljc --init                     Initialize a new project
 
 Options:
   -h, --help              Show this help message
   -v, --version           Show version number
-  -o, --output <file>     Output file path
+  -o, --output <file>     Output file path (single file mode)
   -w, --watch             Watch mode (recompile on changes)
-  -c, --config <file>     Path to config file (.ljconfig.json or .ljconfig.lj)
+  -c, --config <file>     Path to config file (ljconfig.json or ljconfig.lj)
   -p, --prelude <mode>    Prelude mode: 'none', 'core', or 'full' (default: none)
       --no-prelude        Disable prelude (same as -p none)
+  -b, --build, --project  Compile entire project based on ljconfig
+      --init              Initialize a new project with ljconfig.json
+      --init-lj           Initialize a new project with ljconfig.lj
 
 Prelude Modes:
   none    No automatic imports - all types and functions must be explicitly imported
@@ -88,20 +111,37 @@ Examples:
   ljc main.lj                    Compile main.lj to dist/main.js
   ljc main.lj -o out.js          Compile main.lj to out.js
   ljc -w main.lj                 Watch and recompile main.lj on changes
+  ljc -b                         Compile entire project
+  ljc -b -w                      Watch and compile entire project
+  ljc --init                     Create ljconfig.json and src/main.lj
+  ljc --init-lj                  Create ljconfig.lj and src/main.lj
 
-Configuration:
-  The compiler looks for .ljconfig.json or .ljconfig.lj in the current directory.
+Configuration Files:
+  ljconfig.lj   (higher priority) - Ljos format, like vite.config.ts
+  ljconfig.json                   - JSON format, like tsconfig.json
   
-  Example .ljconfig.json:
+  Example ljconfig.json:
   {
     "compilerOptions": {
       "outDir": "./dist",
-      "sourceMap": true,
-      "target": "es2020"
+      "rootDir": "./src",
+      "target": "es2022",
+      "sourceMap": true
     },
     "include": ["src/**/*.lj"],
     "exclude": ["node_modules"]
   }
+
+  Example ljconfig.lj:
+  import { defineConfig } : "/std/config"
+  
+  export default defineConfig({
+    compilerOptions: {
+      outDir: "./dist",
+      rootDir: "./src"
+    },
+    include: ["src/**/*.lj"]
+  })
 `);
 }
 
@@ -158,7 +198,56 @@ function main(): void {
     process.exit(0);
   }
 
+  // Handle --init
+  if (options.init) {
+    try {
+      initProject(process.cwd(), options.initFormat || 'json');
+      process.exit(0);
+    } catch (e) {
+      console.error(`Error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  }
+
+  // Handle project mode (-b, --build, --project)
+  if (options.project) {
+    try {
+      const projectCompiler = new ProjectCompiler(options.config);
+      
+      if (options.watch) {
+        projectCompiler.watch((result) => {
+          if (result.success) {
+            console.log(`\n✓ Compiled ${result.filesCompiled} file(s) in ${result.duration}ms`);
+          } else {
+            console.log(`\n✗ ${result.filesFailed} file(s) failed to compile`);
+          }
+        });
+      } else {
+        // Use build() instead of compile() to support pkg/bundle targets
+        const result = projectCompiler.build();
+        
+        console.log('');
+        if (result.success) {
+          console.log(`\x1b[32m✓\x1b[0m Compiled ${result.filesCompiled} file(s) in ${result.duration}ms`);
+          process.exit(0);
+        } else {
+          console.log(`\x1b[31m✗\x1b[0m ${result.filesFailed} file(s) failed to compile`);
+          process.exit(1);
+        }
+      }
+    } catch (e) {
+      console.error(`Error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Single file mode
   if (!options.input) {
+    // Check if we're in a project directory
+    if (isLjosProject()) {
+      console.log('Hint: Use -b to compile the entire project');
+    }
     console.error('Error: No input file specified');
     console.log('Use --help for usage information');
     process.exit(1);

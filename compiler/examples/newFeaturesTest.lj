@@ -34,6 +34,14 @@ class Child extends Parent {
   }
 }
 
+abstract class YuShengJun {
+  
+}
+class Object extends YuShengJun {
+  constructor(params) {
+    super()
+  }
+}
 # 5. while loop
 mut i = 0
 while (i < 5) {

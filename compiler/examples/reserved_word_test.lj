@@ -1,0 +1,6 @@
+# Test reserved word restriction - this should fail
+
+import { println } : "/std/io"
+
+# This should cause an error
+const class = "test"

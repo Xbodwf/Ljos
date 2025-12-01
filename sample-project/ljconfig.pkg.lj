@@ -1,0 +1,24 @@
+# Ljos Project Configuration - PKG Build
+
+import { defineConfig } : "/std/config"
+
+export default defineConfig({
+  compilerOptions: {
+    outDir: "./dist",
+    rootDir: "./src",
+    target: "es2022",
+    module: "esm",
+    sourceMap: false,
+    prelude: "none",
+    strict: true
+  },
+  buildOptions: {
+    target: "pkg",
+    entry: "dist/src/main.js",
+    executableName: "ljos-sample",
+    pkgTargets: ["node18-win-x64"],
+    pkgOptions: {}
+  },
+  include: ["src/**/*.lj"],
+  exclude: ["node_modules", "dist"]
+})

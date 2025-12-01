@@ -686,7 +686,7 @@ export class SyntaxChecker {
   ): void {
     this.diagnostics.push({
       message: formatError(code, ...args),
-      code: `lj(${code})`,
+      code: `${code}`,
       line,
       column,
       endLine,
@@ -698,7 +698,7 @@ export class SyntaxChecker {
   private addDiagnosticFromError(error: ParserError): void {
     this.diagnostics.push({
       message: error.message,
-      code: `lj(${error.code})`,
+      code: `${error.code}`,
       line: error.token.line,
       column: error.token.column,
       endLine: error.token.line,
@@ -918,15 +918,28 @@ export class SyntaxChecker {
         this.decorators();
       }
 
+      // Parse access modifier (public, private, protected)
+      let accessibility: 'public' | 'private' | 'protected' = 'public';
+      if (this.match(TokenType.PUBLIC)) {
+        accessibility = 'public';
+      } else if (this.match(TokenType.PRIVATE)) {
+        accessibility = 'private';
+      } else if (this.match(TokenType.PROTECTED)) {
+        accessibility = 'protected';
+      }
+
+      // Parse readonly modifier
+      const isReadonly = this.match(TokenType.READONLY);
+
       const isStatic = this.match(TokenType.STATIC);
       const memberIsAbstract = this.match(TokenType.ABSTRACT);
 
       if (this.checkType(TokenType.FN)) {
-        this.methodDeclaration(isStatic, memberIsAbstract);
+        this.methodDeclaration(isStatic, memberIsAbstract, accessibility);
       } else if (this.checkType(TokenType.CONST) || this.checkType(TokenType.MUT)) {
-        this.fieldDeclaration(isStatic);
+        this.fieldDeclaration(isStatic, isReadonly, accessibility);
       } else if (this.checkType(TokenType.CONSTRUCTOR)) {
-        this.constructorDeclaration();
+        this.constructorDeclaration(accessibility);
       } else {
         throw new ParserError(ErrorCode.UNEXPECTED_TOKEN_IN_CLASS_BODY, this.peek());
       }
@@ -936,7 +949,7 @@ export class SyntaxChecker {
     this.consume(ErrorCode.EXPECTED_RBRACE, TokenType.RBRACE);
   }
 
-  private methodDeclaration(isStatic: boolean, isAbstract: boolean): void {
+  private methodDeclaration(isStatic: boolean, isAbstract: boolean, accessibility: 'public' | 'private' | 'protected' = 'public'): void {
     this.advance(); // consume 'fn'
     const nameToken = this.consume(ErrorCode.EXPECTED_FUNCTION_NAME, TokenType.IDENTIFIER);
     
@@ -956,7 +969,7 @@ export class SyntaxChecker {
     this.blockStatement();
   }
 
-  private fieldDeclaration(isStatic: boolean): void {
+  private fieldDeclaration(isStatic: boolean, isReadonly: boolean = false, accessibility: 'public' | 'private' | 'protected' = 'public'): void {
     const isConst = this.peek().type === TokenType.CONST;
     this.advance();
     const nameToken = this.consume(ErrorCode.EXPECTED_VARIABLE_NAME, TokenType.IDENTIFIER);
@@ -974,7 +987,7 @@ export class SyntaxChecker {
     }
   }
 
-  private constructorDeclaration(): void {
+  private constructorDeclaration(accessibility: 'public' | 'private' | 'protected' = 'public'): void {
     this.advance(); // consume 'constructor'
     this.consume(ErrorCode.EXPECTED_LPAREN, TokenType.LPAREN);
     this.parameterList();
@@ -1709,12 +1722,22 @@ export class SyntaxChecker {
     if (this.match(TokenType.LBRACE)) {
       if (!this.checkType(TokenType.RBRACE)) {
         do {
-          this.primary();
+          // Object key can be: identifier, string literal, or computed [expr]
+          if (this.checkType(TokenType.IDENTIFIER)) {
+            this.advance(); // consume identifier as key (don't look it up)
+          } else if (this.checkType(TokenType.STRING)) {
+            this.advance(); // consume string as key
+          } else if (this.match(TokenType.LBRACKET)) {
+            this.expression(); // computed key
+            this.consume(ErrorCode.EXPECTED_RBRACKET, TokenType.RBRACKET);
+          } else {
+            this.primary(); // fallback
+          }
           if (this.match(TokenType.COLON)) {
-            this.expression();
+            this.expressionNoComma();
           } else {
             this.consume(ErrorCode.EXPECTED_ARROW, TokenType.ARROW);
-            this.expression();
+            this.expressionNoComma();
           }
         } while (this.match(TokenType.COMMA));
       }

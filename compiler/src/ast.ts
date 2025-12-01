@@ -68,6 +68,9 @@ export type ClassMember =
   | MethodDeclaration
   | ConstructorDeclaration;
 
+// Access modifiers for class members
+export type AccessModifier = 'public' | 'private' | 'protected';
+
 export interface FieldDeclaration {
   type: 'FieldDeclaration';
   name: string;
@@ -75,6 +78,8 @@ export interface FieldDeclaration {
   typeAnnotation?: TypeAnnotation;
   init?: Expression;
   isStatic?: boolean;
+  isReadonly?: boolean;
+  accessibility?: AccessModifier;
   decorators?: Expression[];
 }
 
@@ -86,6 +91,7 @@ export interface MethodDeclaration {
   body?: BlockStatement;
   isStatic?: boolean;
   isAbstract?: boolean;
+  accessibility?: AccessModifier;
   decorators?: Expression[];
 }
 
@@ -93,6 +99,7 @@ export interface ConstructorDeclaration {
   type: 'ConstructorDeclaration';
   params: Parameter[];
   body: BlockStatement;
+  accessibility?: AccessModifier;
   decorators?: Expression[];
 }
 
