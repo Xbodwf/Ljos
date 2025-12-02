@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESnext",
-    "module": "commonjs",
+    "module": "nodenext",
     "lib": ["ESNext"],
     "outDir": "./dist",
     "rootDir": "./src",
@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "classic",
+    "moduleResolution": "nodenext",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true

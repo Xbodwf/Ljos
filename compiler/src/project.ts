@@ -6,6 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { execSync, spawn } from 'node:child_process';
 import { Compiler, CompileResult, CompilerError } from './compiler';
 import { LjosConfig, CompilerOptions, BuildOptions, loadConfig, getProjectRoot, findConfigFile } from './config';
@@ -207,12 +208,22 @@ export class ProjectCompiler {
 
     console.log(`Compiling ${files.length} file(s)...`);
 
+    // Determine entry point file
+    const entryFile = this.config.buildOptions?.entry || 'src/main.lj';
+    const normalizedEntry = entryFile.replace(/\\/g, '/');
+    
     // Compile each file
     for (const file of files) {
       const inputPath = path.join(this.projectRoot, file);
       const outputPath = this.getOutputPath(file);
       
-      const compileResult = this.compiler.compileToFile(inputPath, outputPath);
+      // Check if this is the entry point file
+      const normalizedFile = file.replace(/\\/g, '/');
+      const isEntryPoint = normalizedFile === normalizedEntry || 
+                           normalizedFile === 'main.lj' ||
+                           normalizedFile.endsWith('/main.lj');
+      
+      const compileResult = this.compiler.compileToFile(inputPath, outputPath, isEntryPoint);
       
       if (compileResult.success) {
         result.filesCompiled++;
@@ -232,12 +243,63 @@ export class ProjectCompiler {
       }
     }
 
-    // Copy runtime/std to output directory
-    // Always copy since code may explicitly import from std
-    this.copyRuntimeStd();
+    // Copy runtime/std to output directory for JS target
+    if (this.config.compilerOptions?.codegenTarget !== 'c') {
+        this.copyRuntimeStd();
+    }
+    // C++ target generates native code, no runtime needed
 
     result.duration = Date.now() - startTime;
     return result;
+  }
+
+  private copyCppRuntime(): void {
+      const outDir = this.config.compilerOptions?.outDir || './dist';
+      // C++ code includes "runtime/js_value.hpp", so we need to put it in outDir/src/runtime usually?
+      // The generated files are in outDir/src/main.cpp etc.
+      // So relative include "runtime/..." means outDir/src/runtime
+      
+      const rootDir = this.config.compilerOptions?.rootDir || './src';
+      // Destination: outDir/rootDir/runtime (merging with std probably fine or side-by-side)
+      // Actually, std is in outDir/rootDir/runtime/std
+      // jsxx runtime is just files in runtime/
+      
+      const dest = path.join(this.projectRoot, outDir, rootDir, 'runtime');
+      
+      const compilerDir = path.dirname(__dirname);
+      // src/jsxx/runtime
+      const src = path.join(compilerDir, 'src', 'jsxx', 'runtime');
+      
+      if (!fs.existsSync(src)) {
+          // Try alt location
+          const altSrc = path.join(compilerDir, '..', 'src', 'jsxx', 'runtime');
+           if (fs.existsSync(altSrc)) {
+              this.copyDirRecursive(altSrc, dest);
+          } else {
+              // If running from dist, source might not be there unless copied.
+              // Assuming dev environment where src is available or copied to dist/jsxx/runtime
+              // Let's try dist/jsxx/runtime
+              const distSrc = path.join(compilerDir, 'jsxx', 'runtime'); // compilerDir is dist/.. -> root? No, __dirname is dist/
+               if (fs.existsSync(distSrc)) {
+                  this.copyDirRecursive(distSrc, dest);
+               }
+          }
+      } else {
+          this.copyDirRecursive(src, dest);
+      }
+      
+      // Copy C++ std lib
+      const stdDest = path.join(this.projectRoot, outDir, rootDir, 'std');
+      const stdSrc = path.join(compilerDir, 'src', 'jsxx', 'std');
+      
+      if (fs.existsSync(stdSrc)) {
+          this.copyDirRecursive(stdSrc, stdDest);
+      } else {
+          const altStdSrc = path.join(compilerDir, '..', 'src', 'jsxx', 'std');
+          if (fs.existsSync(altStdSrc)) {
+              this.copyDirRecursive(altStdSrc, stdDest);
+          }
+      }
   }
 
   /**
@@ -366,6 +428,14 @@ export class ProjectCompiler {
    * Build the project (compile + optional packaging)
    */
   build(): ProjectCompileResult {
+    // Configure for GCC if needed
+    if (this.config.buildOptions?.target === 'gcc') {
+       if (!this.config.compilerOptions) this.config.compilerOptions = {};
+       this.config.compilerOptions.codegenTarget = 'c';
+       // Re-init compiler with new options
+       this.compiler = new Compiler(this.config.compilerOptions);
+    }
+
     // First compile
     const compileResult = this.compile();
     
@@ -381,9 +451,116 @@ export class ProjectCompiler {
     } else if (buildOptions?.target === 'bundle') {
       console.log('\nBundling...');
       this.bundle(buildOptions);
+    } else if (buildOptions?.target === 'gcc') {
+      console.log('\nPackaging with GCC...');
+      this.packageWithGcc(buildOptions, compileResult.outputFiles);
     }
     
     return compileResult;
+  }
+
+  /**
+   * Package the compiled code using GCC
+   * Note: This requires GCC to be installed and in PATH
+   */
+  private packageWithGcc(buildOptions: BuildOptions, outputFiles: string[]): void {
+    const outDir = this.config.compilerOptions?.outDir || './dist';
+    const execName = buildOptions.executableName || 'app';
+    const gccOptions = buildOptions.gccOptions || {};
+    
+    // Find all .cpp and .c files in the output directory recursively
+    const getAllFiles = (dir: string, ext: string): string[] => {
+      let results: string[] = [];
+      if (!fs.existsSync(dir)) return results;
+      const list = fs.readdirSync(dir);
+      list.forEach(file => {
+        file = path.join(dir, file);
+        const stat = fs.statSync(file);
+        if (stat && stat.isDirectory()) {
+          results = results.concat(getAllFiles(file, ext));
+        } else {
+          if (file.endsWith(ext)) results.push(file);
+        }
+      });
+      return results;
+    };
+    
+    const cppFiles = getAllFiles(path.join(this.projectRoot, outDir), '.cpp');
+    const cFiles = getAllFiles(path.join(this.projectRoot, outDir), '.c');
+    const hasCpp = cppFiles.length > 0;
+    
+    let cc = gccOptions.cc;
+    if (!cc) {
+      cc = hasCpp ? 'g++' : 'gcc';
+    }
+    
+    // 1. Check for compiler
+    try {
+      execSync(`${cc} --version`, { stdio: 'ignore' });
+    } catch (e) {
+      console.error(`  ✗ ${cc} not found. Please install GCC/G++.`);
+      return;
+    }
+
+    console.log(`  Compiling sources with ${cc}...`);
+    
+    const exePath = path.join(this.projectRoot, outDir, os.platform() === 'win32' ? `${execName}.exe` : execName);
+    
+    // 2. Compile with GCC/G++
+    // Use -Os for size optimization by default, or user-specified level
+    const optLevel = gccOptions.optLevel !== undefined ? `-O${gccOptions.optLevel}` : '-Os';
+    let extraArgs = gccOptions.gccArgs ? gccOptions.gccArgs.join(' ') : '';
+    
+    // Add C++ std flag if needed (C++17 for string literals, auto, etc.)
+    if (hasCpp && !extraArgs.includes('-std=')) {
+        extraArgs += ' -std=c++17';
+    }
+    
+    // Add size optimization flags
+    extraArgs += ' -s';                    // Strip symbols
+    extraArgs += ' -ffunction-sections';   // Put each function in its own section
+    extraArgs += ' -fdata-sections';       // Put each data item in its own section
+    
+    // Linker flags to remove unused sections
+    if (os.platform() === 'win32') {
+        extraArgs += ' -Wl,--gc-sections'; // Remove unused sections
+    } else {
+        extraArgs += ' -Wl,--gc-sections,-dead_strip';
+    }
+    
+    // Add include path for runtime
+    const includeDir = path.join(this.projectRoot, outDir, this.config.compilerOptions?.rootDir || '');
+    extraArgs += ` -I "${includeDir}"`;
+    
+    const srcFiles = [...cFiles, ...cppFiles];
+    
+    if (srcFiles.length === 0) {
+      console.error('  ✗ No source files found to compile');
+      return;
+    }
+
+    const sourceList = srcFiles.map(f => `"${f}"`).join(' ');
+    
+    try {
+      console.log(`  Running: ${cc} ${sourceList} -o "${exePath}" ${optLevel} ${extraArgs}`);
+      execSync(`${cc} ${sourceList} -o "${exePath}" ${optLevel} ${extraArgs}`, {
+        cwd: this.projectRoot,
+        stdio: 'inherit'
+      });
+      
+      console.log(`  ✓ Compiled to ${path.relative(this.projectRoot, exePath)}`);
+      
+      // Cleanup intermediates if requested
+      if (!gccOptions.keepIntermediates) {
+        for (const file of srcFiles) {
+            if (fs.existsSync(file)) fs.unlinkSync(file);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`  ✗ Failed to compile with ${cc}`);
+      throw error;
+    }
   }
 
   /**
@@ -496,11 +673,12 @@ export class ProjectCompiler {
       }
     }
     
-    // Change extension to .js
+    // Change extension based on target
     const parsed = path.parse(outputRelative);
-    const jsFile = path.join(parsed.dir, `${parsed.name}.js`);
+    const ext = this.config.compilerOptions?.codegenTarget === 'c' ? '.cpp' : '.js';
+    const outFile = path.join(parsed.dir, `${parsed.name}${ext}`);
     
-    return path.join(this.projectRoot, outDir, jsFile);
+    return path.join(this.projectRoot, outDir, outFile);
   }
 }
 

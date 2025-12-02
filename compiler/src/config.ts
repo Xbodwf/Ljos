@@ -38,6 +38,8 @@ export interface CompilerOptions {
    * - 'full': Auto-import core types + io (println, print)
    */
   prelude?: 'none' | 'core' | 'full';
+  /** Code generation target language */
+  codegenTarget?: 'js' | 'c';
   /** Enable strict type checking */
   strict?: boolean;
   /** Allow implicit any type */
@@ -61,8 +63,9 @@ export interface BuildOptions {
    * - 'js': Output JavaScript files (default)
    * - 'pkg': Package as standalone executable using pkg
    * - 'bundle': Bundle all files into a single JS file
+   * - 'gcc': Compile to native executable using GCC
    */
-  target?: 'js' | 'pkg' | 'bundle';
+  target?: 'js' | 'pkg' | 'bundle' | 'gcc';
   /** Entry point for packaging (defaults to main file) */
   entry?: string;
   /** Output executable name (for pkg target) */
@@ -75,6 +78,22 @@ export interface BuildOptions {
     compress?: 'GZip' | 'Brotli';
     /** Include additional assets */
     assets?: string[];
+  };
+  /** Options for GCC packaging */
+  gccOptions?: {
+    /** Optimization level (default: 3) */
+    optLevel?: 0 | 1 | 2 | 3 | 's' | 'z';
+    /** Target triple (not used in GCC, but kept for compatibility if needed, or we can remove) */
+    // GCC usually requires a specific binary for cross compilation, so we might want `compilerPath` or similar.
+    // For now let's just keep it simple and maybe remove targetTriple or replace with compiler command customization.
+    /** Specific GCC binary to use (default: 'gcc') */
+    cc?: string;
+    /** Output format */
+    outputType?: 'exe' | 'obj' | 'asm';
+    /** Additional GCC arguments */
+    gccArgs?: string[];
+    /** Keep intermediate files */
+    keepIntermediates?: boolean;
   };
 }
 

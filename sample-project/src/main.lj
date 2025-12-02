@@ -1,33 +1,38 @@
 # Ljos Sample Project - Main Entry Point
 
 import { println } : "/std/io"
-import { Person } : "./models/person"
 import { greet } : "./utils/greeting"
+import { fib, factorial } : "./utils/math"
 
 fn main() {
   println("=== Ljos Sample Project ===")
   println("")
   
-  # Create a person
-  const alice = new Person("Alice", 25)
-  const bob = new Person("Bob", 30)
-  
-  # Greet them
-  println(greet(alice.getName()))
-  println(greet(bob.getName()))
-  
-  # Show info
+  # Greeting
+  println(greet("World"))
   println("")
-  println("Person info:")
-  println(alice.getInfo())
-  println(bob.getInfo())
   
-  # Test typeof
+  # Fibonacci sequence
+  println("Fibonacci sequence:")
+  mut i: Int = 0
+  for(i<15) {
+    const result = fib(i)
+    println("fib(" + i + ") = " + result)
+    i = i + 1
+  }
   println("")
-  println("Type checking:")
-  println("typeof alice = " + typeof(alice))
-  println("typeof 42 = " + typeof(42))
-  println("typeof 'hello' = " + typeof("hello"))
+  
+  # Factorial
+  println("Factorials:")
+  mut n: Int = 0
+  for(n <= 10) {
+    const fact = factorial(n)
+    println(n + "! = " + fact)
+    n = n + 1
+  }
+  println("")
+  
+  println("Done!")
 }
 
 main()

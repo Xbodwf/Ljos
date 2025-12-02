@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { Lexer, LexerError } from './lexer';
 import { Parser, ParserError } from './parser';
 import { CodeGenerator } from './codegen';
+import { CppCodeGenerator } from './codegen_cpp';
 import { Program } from './ast';
 import { TypeChecker } from './typechecker';
 import { CompilerOptions } from './config';
@@ -12,6 +13,7 @@ export type { CompilerOptions };
 export interface CompileResult {
   success: boolean;
   code?: string;
+  headerCode?: string; // For C++ header files
   ast?: Program;
   errors: CompilerError[];
   warnings: CompilerWarning[];
@@ -44,11 +46,13 @@ export class Compiler {
 
   constructor(options: CompilerOptions = {}) {
     this.options = {
+      ...options, // Spread first to catch everything
       outDir: options.outDir || './dist',
       sourceMap: options.sourceMap ?? false,
       minify: options.minify ?? false,
       target: options.target || 'es2020',
       prelude: options.prelude || 'none',
+      codegenTarget: options.codegenTarget || 'js',
     };
   }
 
@@ -79,7 +83,7 @@ export class Compiler {
     return source;
   }
 
-  compile(source: string, filename?: string): CompileResult {
+  compile(source: string, filename?: string, isEntryPoint: boolean = false): CompileResult {
     const errors: CompilerError[] = [];
     const warnings: CompilerWarning[] = [];
 
@@ -120,12 +124,27 @@ export class Compiler {
       }
 
       // Code generation
-      const generator = new CodeGenerator();
-      const code = generator.generate(ast);
+      let code: string;
+      let headerCode: string | undefined;
+      
+      if (this.options.codegenTarget === 'c') {
+        // Generate C++ directly from AST
+        // Extract module name from filename for header guard
+        const moduleName = filename ? filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9]/g, '_') : 'module';
+        const cppGenerator = new CppCodeGenerator({ isEntryPoint, moduleName });
+        const result = cppGenerator.generate(ast);
+        code = result.cpp;
+        headerCode = result.hpp;
+      } else {
+        // Generate JavaScript
+        const jsGenerator = new CodeGenerator();
+        code = jsGenerator.generate(ast);
+      }
 
       return {
         success: true,
         code,
+        headerCode,
         ast,
         errors,
         warnings,
@@ -162,7 +181,7 @@ export class Compiler {
     }
   }
 
-  compileFile(filePath: string): CompileResult {
+  compileFile(filePath: string, isEntryPoint: boolean = false): CompileResult {
     const absolutePath = path.resolve(filePath);
     
     if (!fs.existsSync(absolutePath)) {
@@ -179,11 +198,11 @@ export class Compiler {
     }
 
     const source = fs.readFileSync(absolutePath, 'utf-8');
-    return this.compile(source, absolutePath);
+    return this.compile(source, absolutePath, isEntryPoint);
   }
 
-  compileToFile(inputPath: string, outputPath?: string): CompileResult {
-    const result = this.compileFile(inputPath);
+  compileToFile(inputPath: string, outputPath?: string, isEntryPoint: boolean = false): CompileResult {
+    const result = this.compileFile(inputPath, isEntryPoint);
 
     if (result.success && result.code) {
       const outPath = outputPath || this.getOutputPath(inputPath);
@@ -194,6 +213,12 @@ export class Compiler {
       }
 
       fs.writeFileSync(outPath, result.code, 'utf-8');
+      
+      // Write header file for C++ modules (non-entry point)
+      if (result.headerCode && this.options.codegenTarget === 'c') {
+        const headerPath = outPath.replace(/\.cpp$/, '.hpp');
+        fs.writeFileSync(headerPath, result.headerCode, 'utf-8');
+      }
     }
 
     return result;
@@ -202,7 +227,8 @@ export class Compiler {
   private getOutputPath(inputPath: string): string {
     const parsed = path.parse(inputPath);
     const relativePath = path.relative(process.cwd(), parsed.dir);
-    return path.join(this.options.outDir!, relativePath, `${parsed.name}.js`);
+    const ext = this.options.codegenTarget === 'c' ? '.cpp' : '.js';
+    return path.join(this.options.outDir!, relativePath, `${parsed.name}${ext}`);
   }
 
   // ===== Module / Import Static Checks =====

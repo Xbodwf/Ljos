@@ -1,0 +1,22 @@
+# Ljos Project Configuration for LLVM Build
+
+import { defineConfig } : "/std/config"
+
+export default defineConfig({
+  compilerOptions: {
+    outDir: "./dist-gcc",
+    rootDir: "./src",
+    prelude: "none",
+    codegenTarget: "c"
+  },
+  buildOptions: {
+    target: "gcc",
+    executableName: "ljos-sample-native",
+    gccOptions: {
+      optLevel: "s",
+      keepIntermediates: true
+    }
+  },
+  include: ["src/**/*.lj"],
+  exclude: ["node_modules", "dist", "dist-llvm", "src/models/**/*.lj"]
+})
