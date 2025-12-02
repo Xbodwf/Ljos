@@ -5,7 +5,8 @@ import {
   LjosType, SymbolInfo, MemberInfo, ModuleInfo,
   typeToString, createPrimitive, createUnknown, createVoid, createNull,
   createArray, createFunction, createClass, isAssignable, BUILTIN_TYPES,
-  ClassType, FunctionType, ParameterInfo, PrimitiveType
+  ClassType, FunctionType, ParameterInfo, PrimitiveType, ObjectLiteralType,
+  getClassMember, getAllClassMembers, createObjectLiteral
 } from './types';
 
 export interface DiagnosticInfo {
@@ -51,6 +52,9 @@ export class SyntaxChecker {
   private classTypes: Map<string, ClassType> = new Map();
   private modules: Map<string, ModuleInfo> = new Map();
   private currentFile?: string;
+  private resolvedModules: Map<string, ModuleInfo> = new Map();
+  private symbolLocations: Map<string, { file: string; line: number; column: number }> = new Map();
+  private symbolReferences: Map<string, { file: string; line: number; column: number }[]> = new Map();
 
   check(source: string, filePath?: string): DiagnosticInfo[] {
     this.diagnostics = [];
@@ -104,6 +108,81 @@ export class SyntaxChecker {
 
   getSymbols(): SymbolInfo[] {
     return Array.from(this.globalScope.symbols.values());
+  }
+
+  // Get definition location for a symbol at the given position
+  getDefinition(line: number, column: number): { file: string; line: number; column: number } | undefined {
+    // Find the token at this position
+    const token = this.tokens.find(t => 
+      t.line === line && column >= t.column && column < t.column + t.value.length
+    );
+    
+    if (!token || token.type !== TokenType.IDENTIFIER) {
+      return undefined;
+    }
+
+    // Look up the symbol
+    const symbol = this.lookupSymbolByName(token.value);
+    if (symbol && symbol.declarationLine > 0) {
+      return {
+        file: this.currentFile || '',
+        line: symbol.declarationLine,
+        column: symbol.declarationColumn
+      };
+    }
+
+    // Check symbol locations map (for cross-module definitions)
+    const location = this.symbolLocations.get(token.value);
+    if (location) {
+      return location;
+    }
+
+    return undefined;
+  }
+
+  // Get all references to a symbol at the given position
+  getReferences(line: number, column: number): { file: string; line: number; column: number }[] {
+    // Find the token at this position
+    const token = this.tokens.find(t => 
+      t.line === line && column >= t.column && column < t.column + t.value.length
+    );
+    
+    if (!token || token.type !== TokenType.IDENTIFIER) {
+      return [];
+    }
+
+    const references: { file: string; line: number; column: number }[] = [];
+    const symbolName = token.value;
+
+    // Find all occurrences of this identifier in the tokens
+    for (const t of this.tokens) {
+      if (t.type === TokenType.IDENTIFIER && t.value === symbolName) {
+        references.push({
+          file: this.currentFile || '',
+          line: t.line,
+          column: t.column
+        });
+      }
+    }
+
+    // Also check stored references
+    const storedRefs = this.symbolReferences.get(symbolName);
+    if (storedRefs) {
+      references.push(...storedRefs);
+    }
+
+    return references;
+  }
+
+  // Helper to look up symbol by name
+  private lookupSymbolByName(name: string): SymbolInfo | undefined {
+    let scope: Scope | undefined = this.currentScope;
+    while (scope) {
+      const symbol = scope.symbols.get(name);
+      if (symbol) return symbol;
+      scope = scope.parent;
+    }
+    return this.globalScope.symbols.get(name);
   }
 
   private addBuiltins(): void {
@@ -274,22 +353,24 @@ export class SyntaxChecker {
   private collectImport(): void {
     this.advance(); // consume 'import'
     
-    const specifiers: { imported: string; local: string }[] = [];
+    const specifiers: { imported: string; local: string; token?: Token }[] = [];
     let isNamespace = false;
     let defaultImport: string | undefined;
+    let defaultImportToken: Token | undefined;
 
     if (this.checkType(TokenType.LBRACE)) {
       this.advance();
       do {
         if (this.checkType(TokenType.IDENTIFIER)) {
-          const imported = this.advance().value;
+          const token = this.advance();
+          const imported = token.value;
           let local = imported;
           if (this.match(TokenType.AS)) {
             if (this.checkType(TokenType.IDENTIFIER)) {
               local = this.advance().value;
             }
           }
-          specifiers.push({ imported, local });
+          specifiers.push({ imported, local, token });
         }
       } while (this.match(TokenType.COMMA));
       if (this.checkType(TokenType.RBRACE)) this.advance();
@@ -298,42 +379,194 @@ export class SyntaxChecker {
       isNamespace = true;
       if (this.match(TokenType.AS)) {
         if (this.checkType(TokenType.IDENTIFIER)) {
-          defaultImport = this.advance().value;
+          defaultImportToken = this.advance();
+          defaultImport = defaultImportToken.value;
         }
       }
     } else if (this.checkType(TokenType.IDENTIFIER)) {
-      defaultImport = this.advance().value;
+      defaultImportToken = this.advance();
+      defaultImport = defaultImportToken.value;
     }
 
     if (this.match(TokenType.COLON)) {
       if (this.checkType(TokenType.STRING)) {
-        const modulePath = this.advance().value;
+        const modulePathToken = this.advance();
+        const modulePath = modulePathToken.value;
         
-        // Register imports as symbols
+        // Try to resolve the module and get its exports
+        const moduleInfo = this.resolveModule(modulePath);
+        
+        // Register imports as symbols with resolved types
         for (const spec of specifiers) {
+          let importType: LjosType = createUnknown();
+          let documentation = `从 '${modulePath}' 导入`;
+          
+          if (moduleInfo && moduleInfo.exports.has(spec.imported)) {
+            const exportedSymbol = moduleInfo.exports.get(spec.imported)!;
+            importType = exportedSymbol.type;
+            documentation = exportedSymbol.documentation || documentation;
+            
+            // If it's a class, also register in classTypes
+            if (importType.kind === 'class') {
+              this.classTypes.set(spec.local, importType);
+            }
+          }
+          
           this.globalScope.symbols.set(spec.local, {
             name: spec.local,
-            type: createUnknown(),
+            type: importType,
             kind: 'import',
             isConst: true,
-            declarationLine: this.previous().line,
-            declarationColumn: this.previous().column,
-            documentation: `从 '${modulePath}' 导入`
+            declarationLine: spec.token?.line || this.previous().line,
+            declarationColumn: spec.token?.column || this.previous().column,
+            documentation
           });
         }
         
         if (defaultImport) {
+          let importType: LjosType = createUnknown();
+          let documentation = isNamespace ? `从 '${modulePath}' 导入的命名空间` : `从 '${modulePath}' 导入的默认导出`;
+          
+          if (moduleInfo) {
+            if (isNamespace) {
+              // Create a class-like type for namespace
+              const nsType = createClass(defaultImport, false);
+              for (const [name, sym] of moduleInfo.exports) {
+                nsType.members.set(name, {
+                  name,
+                  type: sym.type,
+                  isMethod: sym.kind === 'function',
+                  isStatic: true,
+                  isAbstract: false,
+                  isReadonly: sym.isConst,
+                  visibility: 'public'
+                });
+              }
+              importType = nsType;
+            } else if (moduleInfo.defaultExport) {
+              importType = moduleInfo.defaultExport.type;
+              documentation = moduleInfo.defaultExport.documentation || documentation;
+              
+              // If it's a class, also register in classTypes
+              if (importType.kind === 'class') {
+                this.classTypes.set(defaultImport, importType);
+              }
+            }
+          }
+          
           this.globalScope.symbols.set(defaultImport, {
             name: defaultImport,
-            type: createUnknown(),
+            type: importType,
             kind: 'import',
             isConst: true,
-            declarationLine: this.previous().line,
-            declarationColumn: this.previous().column,
-            documentation: isNamespace ? `从 '${modulePath}' 导入的命名空间` : `从 '${modulePath}' 导入的默认导出`
+            declarationLine: defaultImportToken?.line || this.previous().line,
+            declarationColumn: defaultImportToken?.column || this.previous().column,
+            documentation
           });
         }
       }
+    }
+  }
+
+  // Resolve a module path and return its exports
+  private resolveModule(modulePath: string): ModuleInfo | undefined {
+    // Check cache first
+    if (this.resolvedModules.has(modulePath)) {
+      return this.resolvedModules.get(modulePath);
+    }
+
+    // Try to resolve the module file
+    const resolvedPath = this.resolveModulePath(modulePath);
+    if (!resolvedPath) {
+      return undefined;
+    }
+
+    // Try to read and parse the module
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      if (!fs.existsSync(resolvedPath)) {
+        return undefined;
+      }
+
+      const source = fs.readFileSync(resolvedPath, 'utf-8');
+      
+      // Create a new checker for the module (avoid circular dependencies)
+      const moduleChecker = new SyntaxChecker();
+      moduleChecker.check(source, resolvedPath);
+      
+      // Collect exports from the module
+      const exports = new Map<string, SymbolInfo>();
+      let defaultExport: SymbolInfo | undefined;
+      
+      // Get all symbols that were exported
+      for (const [name, sym] of moduleChecker.globalScope.symbols) {
+        // In Ljos, exported symbols are tracked during parsing
+        // For now, assume all top-level declarations are exported
+        exports.set(name, sym);
+      }
+      
+      // Also copy class types
+      for (const [name, classType] of moduleChecker.classTypes) {
+        if (!this.classTypes.has(name)) {
+          this.classTypes.set(name, classType);
+        }
+      }
+
+      const moduleInfo: ModuleInfo = {
+        path: resolvedPath,
+        exports,
+        defaultExport,
+        isResolved: true
+      };
+
+      this.resolvedModules.set(modulePath, moduleInfo);
+      return moduleInfo;
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Resolve module path to absolute file path
+  private resolveModulePath(modulePath: string): string | undefined {
+    if (!this.currentFile) return undefined;
+
+    try {
+      const path = require('path');
+      const fs = require('fs');
+      
+      const currentDir = path.dirname(this.currentFile);
+      
+      // Handle relative paths
+      if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
+        let resolved = path.resolve(currentDir, modulePath);
+        
+        // Try with .lj extension
+        if (!resolved.endsWith('.lj')) {
+          if (fs.existsSync(resolved + '.lj')) {
+            return resolved + '.lj';
+          }
+          // Try as directory with index.lj
+          if (fs.existsSync(path.join(resolved, 'index.lj'))) {
+            return path.join(resolved, 'index.lj');
+          }
+        }
+        
+        if (fs.existsSync(resolved)) {
+          return resolved;
+        }
+      }
+      
+      // Handle standard library imports (e.g., "std/io")
+      if (modulePath.startsWith('std/')) {
+        // Standard library paths would be resolved here
+        return undefined;
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -724,30 +957,148 @@ export class SyntaxChecker {
     // Use code block with ljos syntax highlighting
     switch (type.kind) {
       case 'function': {
-        const params = type.params.map(p => `${p.name}: ${typeToString(p.type)}`).join(', ');
-        return `\`\`\`ljos\nfn ${name}(${params}): ${typeToString(type.returnType)}\n\`\`\``;
+        const params = type.params.map(p => {
+          let paramStr = `${p.name}: ${typeToString(p.type)}`;
+          if (p.optional) {
+            paramStr += ' = ...';
+          }
+          return paramStr;
+        }).join(', ');
+        const returnTypeStr = typeToString(type.returnType);
+        return `\`\`\`ljos\nfn ${name}(${params}): ${returnTypeStr}\n\`\`\``;
       }
       case 'class': {
-        // Show abbreviated class info
+        // Show class info with inherited members
+        const allMembers = getAllClassMembers(type);
         const members: string[] = [];
-        type.members.forEach((member, memberName) => {
+        
+        // Show superclass if exists
+        let header = type.isAbstract ? 'abstract ' : '';
+        header += `class ${name}`;
+        if (type.superClass) {
+          header += ` extends ${type.superClass.name}`;
+        }
+        
+        allMembers.forEach((member, memberName) => {
+          const visibility = member.visibility !== 'public' ? `${member.visibility} ` : '';
+          const staticMod = member.isStatic ? 'static ' : '';
+          
           if (member.isMethod) {
             const fnType = member.type as FunctionType;
             const params = fnType.params.map(p => `${p.name}: ${typeToString(p.type)}`).join(', ');
-            members.push(`  fn ${memberName}(${params}): ${typeToString(fnType.returnType)}`);
+            members.push(`  ${visibility}${staticMod}fn ${memberName}(${params}): ${typeToString(fnType.returnType)}`);
           } else {
-            members.push(`  ${member.isReadonly ? 'const' : 'mut'} ${memberName}: ${typeToString(member.type)}`);
+            const readonly = member.isReadonly ? 'const' : 'mut';
+            members.push(`  ${visibility}${staticMod}${readonly} ${memberName}: ${typeToString(member.type)}`);
           }
         });
-        const memberStr = members.length > 0 ? `\n${members.slice(0, 5).join('\n')}${members.length > 5 ? '\n  ...' : ''}\n` : ' ';
-        return `\`\`\`ljos\n${type.isAbstract ? 'abstract ' : ''}class ${name} {${memberStr}}\n\`\`\``;
+        
+        // Limit display to 6 lines, then fold
+        const maxLines = 6;
+        let memberStr: string;
+        if (members.length === 0) {
+          memberStr = ' ';
+        } else if (members.length <= maxLines) {
+          memberStr = `\n${members.join('\n')}\n`;
+        } else {
+          memberStr = `\n${members.slice(0, maxLines - 1).join('\n')}\n  ... (${members.length - maxLines + 1} more)\n`;
+        }
+        
+        return `\`\`\`ljos\n${header} {${memberStr}}\n\`\`\``;
+      }
+      case 'map': {
+        // Format object/map type with expanded keys
+        return `\`\`\`ljos\n${name}: {${typeToString(type.keyType)}: ${typeToString(type.valueType)}}\n\`\`\``;
+      }
+      case 'array':
+        return `\`\`\`ljos\n${name}: [${typeToString(type.elementType)}]\n\`\`\``;
+      case 'tuple': {
+        const elements = type.elementTypes.map(t => typeToString(t)).join(', ');
+        return `\`\`\`ljos\n${name}: (${elements})\n\`\`\``;
+      }
+      case 'union': {
+        const types = type.types.map(t => typeToString(t)).join(' | ');
+        return `\`\`\`ljos\n${name}: ${types}\n\`\`\``;
+      }
+      case 'object': {
+        // Format object literal type with expanded properties
+        return this.formatObjectTypeHover(name, type.properties);
       }
       case 'primitive':
-      case 'array':
       case 'generic':
       default:
         return `\`\`\`ljos\n${name}: ${typeToString(type)}\n\`\`\``;
     }
+  }
+
+  // Format object literal type for hover display
+  private formatObjectTypeHover(name: string, properties: Map<string, LjosType>): string {
+    const lines: string[] = [];
+    const maxLines = 4;
+    let count = 0;
+    
+    for (const [key, valueType] of properties) {
+      if (count >= maxLines) {
+        lines.push(`  ... (${properties.size - count} more)`);
+        break;
+      }
+      
+      // Recursively format nested objects
+      if (valueType.kind === 'object' && valueType.properties.size > 0) {
+        const nestedStr = this.formatNestedObject(valueType.properties, 1);
+        lines.push(`  ${key}: ${nestedStr}`);
+      } else if (valueType.kind === 'class' && valueType.members.size > 0) {
+        const nestedProps = new Map<string, LjosType>();
+        for (const [memberName, member] of valueType.members) {
+          nestedProps.set(memberName, member.type);
+        }
+        const nestedStr = this.formatNestedObject(nestedProps, 1);
+        lines.push(`  ${key}: ${nestedStr}`);
+      } else {
+        lines.push(`  ${key}: ${typeToString(valueType)}`);
+      }
+      count++;
+    }
+    
+    if (lines.length === 0) {
+      return `\`\`\`ljos\n${name}: {}\n\`\`\``;
+    }
+    
+    return `\`\`\`ljos\n${name}: {\n${lines.join(',\n')}\n}\n\`\`\``;
+  }
+
+  private formatNestedObject(properties: Map<string, LjosType>, depth: number): string {
+    if (depth > 2) {
+      return '{...}'; // Limit nesting depth
+    }
+    
+    const indent = '  '.repeat(depth + 1);
+    const lines: string[] = [];
+    const maxLines = 4;
+    let count = 0;
+    
+    for (const [key, valueType] of properties) {
+      if (count >= maxLines) {
+        lines.push(`${indent}...`);
+        break;
+      }
+      
+      if (valueType.kind === 'object' && valueType.properties.size > 0) {
+        lines.push(`${indent}${key}: ${this.formatNestedObject(valueType.properties, depth + 1)}`);
+      } else if (valueType.kind === 'class' && valueType.members.size > 0) {
+        const nestedProps = new Map<string, LjosType>();
+        for (const [memberName, member] of valueType.members) {
+          nestedProps.set(memberName, member.type);
+        }
+        lines.push(`${indent}${key}: ${this.formatNestedObject(nestedProps, depth + 1)}`);
+      } else {
+        lines.push(`${indent}${key}: ${typeToString(valueType)}`);
+      }
+      count++;
+    }
+    
+    const closeIndent = '  '.repeat(depth);
+    return `{\n${lines.join(',\n')}\n${closeIndent}}`;
   }
 
   // ==================== Parser Methods ====================
@@ -1560,9 +1911,9 @@ export class SyntaxChecker {
       } else if (this.match(TokenType.DOT, TokenType.SAFE_DOT)) {
         const propToken = this.consume(ErrorCode.EXPECTED_PROPERTY_NAME, TokenType.IDENTIFIER);
         
-        // Look up member type
+        // Look up member type (including inherited members)
         if (type.kind === 'class') {
-          const member = type.members.get(propToken.value);
+          const member = getClassMember(type, propToken.value);
           if (member) {
             this.addHoverInfo(propToken, member.type);
             type = member.type;
@@ -1720,29 +2071,50 @@ export class SyntaxChecker {
     }
 
     if (this.match(TokenType.LBRACE)) {
+      const startToken = this.previous();
+      const properties = new Map<string, LjosType>();
+      
       if (!this.checkType(TokenType.RBRACE)) {
         do {
           // Object key can be: identifier, string literal, or computed [expr]
+          let keyName: string | undefined;
+          let keyToken: Token | undefined;
+          
           if (this.checkType(TokenType.IDENTIFIER)) {
-            this.advance(); // consume identifier as key (don't look it up)
+            keyToken = this.advance(); // consume identifier as key (don't look it up)
+            keyName = keyToken.value;
           } else if (this.checkType(TokenType.STRING)) {
-            this.advance(); // consume string as key
+            keyToken = this.advance(); // consume string as key
+            keyName = keyToken.value;
           } else if (this.match(TokenType.LBRACKET)) {
             this.expression(); // computed key
             this.consume(ErrorCode.EXPECTED_RBRACKET, TokenType.RBRACKET);
           } else {
             this.primary(); // fallback
           }
+          
+          let valueType: LjosType = createUnknown();
           if (this.match(TokenType.COLON)) {
-            this.expressionNoComma();
+            valueType = this.expressionNoComma();
           } else {
             this.consume(ErrorCode.EXPECTED_ARROW, TokenType.ARROW);
-            this.expressionNoComma();
+            valueType = this.expressionNoComma();
+          }
+          
+          // Store property type
+          if (keyName) {
+            properties.set(keyName, valueType);
+            // Add hover info for the key
+            if (keyToken) {
+              this.addHoverInfo(keyToken, valueType);
+            }
           }
         } while (this.match(TokenType.COMMA));
       }
       this.consume(ErrorCode.EXPECTED_RBRACE, TokenType.RBRACE);
-      return createUnknown();
+      
+      const objectType = createObjectLiteral(properties);
+      return objectType;
     }
 
     if (this.match(TokenType.GO)) {

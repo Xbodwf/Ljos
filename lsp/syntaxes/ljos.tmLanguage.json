@@ -101,19 +101,31 @@
         },
         {
           "name": "storage.modifier.ljos",
-          "match": "\\b(mut|const)\\b"
+          "match": "\\b(mut|const|readonly)\\b"
+        },
+        {
+          "name": "storage.modifier.access.ljos",
+          "match": "\\b(public|private|protected)\\b"
+        },
+        {
+          "name": "storage.modifier.other.ljos",
+          "match": "\\b(static|abstract|final|override)\\b"
         },
         {
           "name": "keyword.control.ljos",
-          "match": "\\b(if|else|for|when|break|continue|return|throw|try|catch)\\b"
+          "match": "\\b(if|else|for|while|do|when|break|continue|return|throw|try|catch|finally)\\b"
         },
         {
           "name": "keyword.operator.ljos",
-          "match": "\\b(is|of|in|as)\\b"
+          "match": "\\b(is|of|in|as|typeof|instanceof)\\b"
         },
         {
           "name": "keyword.other.ljos",
-          "match": "\\b(fn|type|where|go|defer|move|borrow|using|macro)\\b"
+          "match": "\\b(fn|type|where|go|defer|move|borrow|using|macro|async|await|yield)\\b"
+        },
+        {
+          "name": "keyword.declaration.ljos",
+          "match": "\\b(class|interface|enum|extends|implements|constructor|new|this|super)\\b"
         },
         {
           "name": "keyword.control.import.ljos",

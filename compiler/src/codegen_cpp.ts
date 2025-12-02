@@ -246,6 +246,18 @@ export class CppCodeGenerator {
         return this.generateReturnStatement(stmt);
       case 'BlockStatement':
         return this.generateBlockStatement(stmt);
+      case 'BreakStatement':
+        return this.getIndent() + 'break;\n';
+      case 'ContinueStatement':
+        return this.getIndent() + 'continue;\n';
+      case 'ThrowStatement':
+        return this.generateThrowStatement(stmt);
+      case 'TryStatement':
+        return this.generateTryStatement(stmt);
+      case 'WhenStatement':
+        return this.generateWhenStatement(stmt);
+      case 'DeferStatement':
+        return this.generateDeferStatement(stmt);
       case 'ImportStatement':
         return ''; // Handled in categorize
       case 'ExportStatement':
@@ -269,6 +281,9 @@ export class CppCodeGenerator {
       const init = this.generateExpression(stmt.init);
       // Use auto for type inference when no explicit type
       if (!stmt.typeAnnotation) {
+        // Infer type from initializer for tracking
+        const inferredType = this.inferType(stmt.init);
+        this.varTypes.set(stmt.name, { cppType: inferredType, isConst: stmt.kind === 'const' });
         return this.getIndent() + `${keyword}auto ${stmt.name} = ${init};\n`;
       }
       return this.getIndent() + `${keyword}${cppType} ${stmt.name} = ${init};\n`;
@@ -276,10 +291,35 @@ export class CppCodeGenerator {
     return this.getIndent() + `${cppType} ${stmt.name};\n`;
   }
 
+  // Infer C++ type from expression
+  private inferType(expr: AST.Expression): string {
+    if (expr.type === 'Literal') {
+      if (typeof expr.value === 'string') return 'string';
+      if (typeof expr.value === 'number') {
+        return Number.isInteger(expr.value) ? 'int' : 'double';
+      }
+      if (typeof expr.value === 'boolean') return 'bool';
+    }
+    if (expr.type === 'TemplateStringExpression') return 'string';
+    if (expr.type === 'BinaryExpression' && expr.operator === '+') {
+      // If either side is string, result is string
+      if (this.isStringLiteral(expr.left) || this.isStringLiteral(expr.right)) {
+        return 'string';
+      }
+    }
+    return 'auto';
+  }
+
   private generateFunctionDeclaration(stmt: AST.FunctionDeclaration): string {
     // Rename 'main' to avoid conflict with C++ main()
     const funcName = stmt.name === 'main' ? '_ljos_main' : stmt.name;
     const returnType = this.mapType(stmt.returnType);
+    
+    // Track parameter types
+    for (const p of stmt.params) {
+      const pType = this.mapType(p.typeAnnotation);
+      this.varTypes.set(p.name, { cppType: pType, isConst: false });
+    }
     
     const params = stmt.params.map(p => {
       const pType = this.mapType(p.typeAnnotation);
@@ -499,6 +539,114 @@ export class CppCodeGenerator {
     return code;
   }
 
+  private generateThrowStatement(stmt: AST.ThrowStatement): string {
+    this.includes.add('#include <stdexcept>');
+    const arg = this.generateExpression(stmt.argument);
+    return this.getIndent() + `throw runtime_error(${arg});\n`;
+  }
+
+  private generateTryStatement(stmt: AST.TryStatement): string {
+    let code = this.getIndent() + 'try {\n';
+    this.indent++;
+    for (const s of stmt.block.body) {
+      code += this.generateStatement(s);
+    }
+    this.indent--;
+    code += this.getIndent() + '}';
+    
+    for (const handler of stmt.handlers) {
+      if (handler.typeAnnotation) {
+        const exType = this.mapType(handler.typeAnnotation);
+        code += ` catch (const ${exType}& ${handler.param || 'e'}) {\n`;
+      } else {
+        code += ` catch (...) {\n`;
+      }
+      this.indent++;
+      for (const s of handler.body.body) {
+        code += this.generateStatement(s);
+      }
+      this.indent--;
+      code += this.getIndent() + '}';
+    }
+    
+    code += '\n';
+    return code;
+  }
+
+  private generateWhenStatement(stmt: AST.WhenStatement): string {
+    // when statement -> if-else chain
+    const disc = stmt.discriminant ? this.generateExpression(stmt.discriminant) : null;
+    let code = '';
+    let first = true;
+    
+    for (const c of stmt.cases) {
+      const isElse = c.pattern.type === 'ElsePattern';
+      
+      if (isElse) {
+        code += this.getIndent() + '} else {\n';
+      } else if (first) {
+        code += this.getIndent() + `if (${this.generateWhenPattern(c.pattern, disc)}) {\n`;
+        first = false;
+      } else {
+        code += this.getIndent() + `} else if (${this.generateWhenPattern(c.pattern, disc)}) {\n`;
+      }
+      
+      this.indent++;
+      if (c.body.type === 'BlockStatement') {
+        for (const s of c.body.body) {
+          code += this.generateStatement(s);
+        }
+      } else {
+        // Expression body
+        code += this.getIndent() + this.generateExpression(c.body) + ';\n';
+      }
+      this.indent--;
+    }
+    
+    if (stmt.cases.length > 0) {
+      code += this.getIndent() + '}\n';
+    }
+    return code;
+  }
+
+  private generateWhenPattern(pattern: AST.Pattern, disc: string | null): string {
+    switch (pattern.type) {
+      case 'LiteralPattern': {
+        const val = this.generateExpression(pattern.value);
+        return disc ? `(${disc} == ${val})` : val;
+      }
+      case 'IdentifierPattern': {
+        // Binding pattern - just use true (will bind in body)
+        return 'true';
+      }
+      case 'OrPattern': {
+        const parts = pattern.patterns.map(p => this.generateWhenPattern(p, disc));
+        return `(${parts.join(' || ')})`;
+      }
+      case 'TypePattern': {
+        // Type checking - use typeid or dynamic_cast
+        return `true /* type check: ${pattern.typeAnnotation} */`;
+      }
+      case 'ElsePattern':
+        return 'true';
+      default:
+        return 'true';
+    }
+  }
+
+  private generateDeferStatement(stmt: AST.DeferStatement): string {
+    // C++ doesn't have defer - use RAII or comment
+    // For now, generate a comment
+    let code = this.getIndent() + '// defer: ';
+    if (stmt.body.type === 'BlockStatement') {
+      code += '{ ... } - TODO: Use scope_guard\n';
+    } else {
+      // Expression body
+      code += this.generateExpression(stmt.body) + ';\n';
+    }
+    return code;
+  }
+
   private generateExpression(expr: AST.Expression): string {
     switch (expr.type) {
       case 'Literal':
@@ -616,20 +764,32 @@ export class CppCodeGenerator {
     if (this.isStringLiteral(expr)) {
       return generated;
     }
+    // Check if identifier is a known string variable
+    if (expr.type === 'Identifier') {
+      const varInfo = this.varTypes.get(expr.name);
+      if (varInfo && varInfo.cppType === 'string') {
+        return generated;
+      }
+    }
     // Call expressions that return strings (like greet) don't need wrapping
     if (expr.type === 'CallExpression') {
       // Check if it's a known string-returning function
       if (expr.callee.type === 'Identifier') {
         const name = expr.callee.name;
         // These are known to return strings
-        if (['greet', 'farewell'].includes(name)) {
+        if (['greet', 'farewell', 'greetPerson'].includes(name)) {
           return generated;
         }
       }
       // For other calls, assume they might return non-string, wrap to be safe
       return `to_string(${generated})`;
     }
-    // Identifiers and other expressions - wrap with to_string
+    // Member expressions - check if accessing a string property
+    if (expr.type === 'MemberExpression') {
+      // Assume member access might be string, don't wrap
+      return generated;
+    }
+    // Other expressions - wrap with to_string
     return `to_string(${generated})`;
   }
 

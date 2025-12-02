@@ -135,6 +135,53 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Register definition provider (Go to Definition)
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider('ljos', {
+      provideDefinition(document, position) {
+        // Ensure document is validated first
+        validateDocument(document);
+        
+        const checker = getChecker(document.uri.toString());
+        const definition = checker.getDefinition(position.line + 1, position.character + 1);
+        
+        if (definition && definition.file && definition.line > 0) {
+          const uri = definition.file === document.uri.fsPath 
+            ? document.uri 
+            : vscode.Uri.file(definition.file);
+          return new vscode.Location(
+            uri,
+            new vscode.Position(definition.line - 1, definition.column - 1)
+          );
+        }
+        return null;
+      }
+    })
+  );
+
+  // Register reference provider (Find All References)
+  context.subscriptions.push(
+    vscode.languages.registerReferenceProvider('ljos', {
+      provideReferences(document, position, context) {
+        // Ensure document is validated first
+        validateDocument(document);
+        
+        const checker = getChecker(document.uri.toString());
+        const references = checker.getReferences(position.line + 1, position.character + 1);
+        
+        return references.map(ref => {
+          const uri = ref.file === document.uri.fsPath 
+            ? document.uri 
+            : vscode.Uri.file(ref.file);
+          return new vscode.Location(
+            uri,
+            new vscode.Position(ref.line - 1, ref.column - 1)
+          );
+        });
+      }
+    })
+  );
+
   // Register completion provider
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider('ljos', {

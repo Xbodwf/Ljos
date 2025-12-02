@@ -238,7 +238,11 @@ export class ProjectCompiler {
         });
         console.log(`  ✗ ${file}`);
         for (const error of compileResult.errors) {
-          console.log(`    ${error.message}`);
+          if (error.line > 0) {
+            console.log(`    ${error.line}:${error.column} - ${error.message}`);
+          } else {
+            console.log(`    ${error.message}`);
+          }
         }
       }
     }

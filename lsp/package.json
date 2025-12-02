@@ -2,7 +2,7 @@
   "name": "ljos-language",
   "displayName": "Ljos Language",
   "description": "Language support for Ljos programming language in VSCode.",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "ljos",
   "engines": {
     "vscode": "^1.80.0"

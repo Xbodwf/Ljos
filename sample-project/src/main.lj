@@ -1,38 +1,282 @@
-# Ljos Sample Project - Main Entry Point
+# Ljos Sample Project - Comprehensive Demo
+# 展示 Ljos 语言的大部分语法特性
 
-import { println } : "/std/io"
-import { greet } : "./utils/greeting"
-import { fib, factorial } : "./utils/math"
+import { println, print } : "/std/io"
+import { greet, farewell } : "./utils/greeting"
+import { fib, factorial, isPrime } : "./utils/math"
 
-fn main() {
-  println("=== Ljos Sample Project ===")
-  println("")
+# ============ 1. 变量声明 ============
+fn demoVariables() {
+  println("=== 1. Variables ===")
   
-  # Greeting
-  println(greet("World"))
-  println("")
+  # 不可变绑定
+  const name: Str = "Ljos"
+  const version: Float = 2.0
+  const isAwesome: Bool = true
   
-  # Fibonacci sequence
-  println("Fibonacci sequence:")
-  mut i: Int = 0
-  for(i<15) {
-    const result = fib(i)
-    println("fib(" + i + ") = " + result)
+  # 可变绑定
+  mut counter: Int = 0
+  counter = counter + 1
+  
+  # 类型推断
+  const inferredStr = "Hello"
+  const inferredNum = 42
+  
+  println("Language: " + name + " v" + version)
+  println("Counter: " + counter)
+  println("")
+}
+
+# ============ 2. 控制流 ============
+fn demoControlFlow() {
+  println("=== 2. Control Flow ===")
+  
+  # if-else
+  const score: Int = 85
+  if (score >= 90) {
+    println("Grade: A")
+  } else if (score >= 80) {
+    println("Grade: B")
+  } else if (score >= 70) {
+    println("Grade: C")
+  } else {
+    println("Grade: F")
+  }
+  
+  # while 循环
+  println("Counting: ")
+  mut i: Int = 1
+  while (i <= 5) {
+    print(i + " ")
     i = i + 1
   }
   println("")
   
-  # Factorial
-  println("Factorials:")
-  mut n: Int = 0
-  for(n <= 10) {
-    const fact = factorial(n)
-    println(n + "! = " + fact)
-    n = n + 1
+  # for 循环
+  println("Squares: ")
+  for (mut j: Int = 1; j <= 5; j = j + 1) {
+    print(j * j + " ")
   }
   println("")
+  println("")
+}
+
+# ============ 3. 函数 ============
+fn add(a: Int, b: Int): Int {
+  return a + b
+}
+
+fn multiply(a: Int, b: Int): Int {
+  return a * b
+}
+
+# 带默认参数的函数
+fn greetPerson(name: Str, greeting: Str = "Hello"): Str {
+  return greeting + ", " + name + "!"
+}
+
+fn demoFunctions() {
+  println("=== 3. Functions ===")
   
-  println("Done!")
+  println("add(3, 5) = " + add(3, 5))
+  println("multiply(4, 7) = " + multiply(4, 7))
+  println(greetPerson("Alice"))
+  println(greetPerson("Bob", "Hi"))
+  println("")
+}
+
+# ============ 4. 数学运算 ============
+fn demoMath() {
+  println("=== 4. Math Operations ===")
+  
+  # 斐波那契
+  println("Fibonacci(10) = " + fib(10))
+  
+  # 阶乘
+  println("Factorial(6) = " + factorial(6))
+  
+  # 素数检测
+  println("Prime numbers up to 30:")
+  for (mut n: Int = 2; n <= 30; n = n + 1) {
+    if (isPrime(n)) {
+      print(n + " ")
+    }
+  }
+  println("")
+  println("")
+}
+
+# ============ 5. 字符串操作 ============
+fn demoStrings() {
+  println("=== 5. String Operations ===")
+  
+  const first: Str = "Hello"
+  const second: Str = "World"
+  
+  # 字符串拼接
+  const combined = first + " " + second
+  println("Combined: " + combined)
+  
+  # 字符串拼接
+  const lang = "Ljos"
+  const ver = 2
+  println(lang + " is " + ver + " years old")
+  
+  println("")
+}
+
+# ============ 6. 递归 ============
+fn sumTo(n: Int): Int {
+  if (n <= 0) {
+    return 0
+  }
+  return n + sumTo(n - 1)
+}
+
+fn demoRecursion() {
+  println("=== 6. Recursion ===")
+  
+  println("Sum 1 to 10 = " + sumTo(10))
+  println("Sum 1 to 100 = " + sumTo(100))
+  println("")
+}
+
+# ============ 7. 高阶函数模拟 ============
+fn applyTwice(x: Int, addend: Int): Int {
+  return x + addend + addend
+}
+
+fn demoHigherOrder() {
+  println("=== 7. Higher-Order Functions ===")
+  
+  const result = applyTwice(10, 5)
+  println("applyTwice(10, 5) = " + result)
+  println("")
+}
+
+# ============ 8. 复杂算法 ============
+fn gcd(a: Int, b: Int): Int {
+  if (b == 0) {
+    return a
+  }
+  return gcd(b, a % b)
+}
+
+fn lcm(a: Int, b: Int): Int {
+  # LCM = a * b / gcd(a, b), but we compute a * (b / gcd) to avoid overflow
+  # Since division returns Float, we need to work around it
+  const g = gcd(a, b)
+  # Use multiplication and modulo to simulate integer division
+  mut result: Int = 0
+  mut temp: Int = a
+  for(temp >= g) {
+    temp = temp - g
+    result = result + 1
+  }
+  return result * b
+}
+
+fn power(base: Int, exp: Int): Int {
+  if (exp == 0) {
+    return 1
+  }
+  mut result: Int = 1
+  mut i: Int = 0
+  for(i < exp) {
+    result = result * base
+    i = i + 1
+  }
+  return result
+}
+
+fn demoAlgorithms() {
+  println("=== 8. Algorithms ===")
+  
+  println("GCD(48, 18) = " + gcd(48, 18))
+  println("LCM(12, 15) = " + lcm(12, 15))
+  
+  # 快速幂
+  println("2^10 = " + power(2, 10))
+  println("")
+}
+
+# ============ 9. 数组操作模拟 ============
+fn demoArrays() {
+  println("=== 9. Array-like Operations ===")
+  
+  # 模拟数组求和
+  const sum = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
+  println("Sum of 1-10: " + sum)
+  
+  # 模拟最大值
+  mut max: Int = 0
+  mut current: Int = 1
+  for(current <= 10) {
+    const val = (current * 7) % 13
+    if (val > max) {
+      max = val
+    }
+    current = current + 1
+  }
+  println("Max of (i*7)%13 for i=1..10: " + max)
+  println("")
+}
+
+# ============ 10. 综合示例 ============
+fn demoComprehensive() {
+  println("=== 10. Comprehensive Example ===")
+  
+  # 计算前 N 个素数的和
+  const N = 10
+  mut count: Int = 0
+  mut num: Int = 2
+  mut primeSum: Int = 0
+  
+  for(count < N) {
+    if (isPrime(num)) {
+      primeSum = primeSum + num
+      count = count + 1
+    }
+    num = num + 1
+  }
+  
+  println("Sum of first " + N + " primes: " + primeSum)
+  
+  # 斐波那契数列中的偶数和
+  mut fibSum: Int = 0
+  mut fibIdx: Int = 0
+  for(fibIdx < 20) {
+    const f = fib(fibIdx)
+    if (f % 2 == 0) {
+      fibSum = fibSum + f
+    }
+    fibIdx = fibIdx + 1
+  }
+  println("Sum of even Fibonacci numbers (first 20): " + fibSum)
+  
+  println("")
+}
+
+# ============ 主函数 ============
+fn main() {
+  println("╔════════════════════════════════════════╗")
+  println("║   Ljos Language Feature Demonstration  ║")
+  println("╚════════════════════════════════════════╝")
+  println("")
+  
+  demoVariables()
+  demoControlFlow()
+  demoFunctions()
+  demoMath()
+  demoStrings()
+  demoRecursion()
+  demoHigherOrder()
+  demoAlgorithms()
+  demoArrays()
+  demoComprehensive()
+  
+  println("=== Demo Complete ===")
+  println(farewell("Ljos Demo"))
 }
 
 main()

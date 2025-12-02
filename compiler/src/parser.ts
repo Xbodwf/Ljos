@@ -700,14 +700,18 @@ export class Parser {
   }
 
   private returnStatement(): AST.ReturnStatement {
-    this.advance(); // consume 'return'
+    const token = this.advance(); // consume 'return'
     let argument: AST.Expression | undefined;
     
     if (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       argument = this.expression();
     }
 
-    return { type: 'ReturnStatement', argument };
+    return { 
+      type: 'ReturnStatement', 
+      argument,
+      loc: { line: token.line, column: token.column }
+    };
   }
 
   private breakStatement(): AST.BreakStatement {

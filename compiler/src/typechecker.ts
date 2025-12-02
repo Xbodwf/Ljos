@@ -234,8 +234,8 @@ export class TypeChecker {
             if (!this.isAssignableTo(returnType, this.currentFunctionReturnType)) {
               errors.push({
                 message: `Type '${this.typeToString(returnType)}' is not assignable to return type '${this.typeToString(this.currentFunctionReturnType)}'`,
-                line: 0,
-                column: 0,
+                line: stmt.loc?.line ?? 0,
+                column: stmt.loc?.column ?? 0,
                 file: filename,
               });
             }

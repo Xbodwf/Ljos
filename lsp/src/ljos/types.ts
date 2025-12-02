@@ -11,7 +11,14 @@ export type LjosType =
   | GenericType
   | UnknownType
   | VoidType
-  | NullType;
+  | NullType
+  | ObjectLiteralType;
+
+// Object literal type (for { key: value } expressions)
+export interface ObjectLiteralType {
+  kind: 'object';
+  properties: Map<string, LjosType>;
+}
 
 export interface PrimitiveType {
   kind: 'primitive';
@@ -134,6 +141,13 @@ export function typeToString(type: LjosType): string {
         return type.name;
       }
       return `${type.name}<${type.typeArguments.map(typeToString).join(', ')}>`;
+    case 'object': {
+      const props: string[] = [];
+      for (const [key, valueType] of type.properties) {
+        props.push(`${key}: ${typeToString(valueType)}`);
+      }
+      return `{${props.join(', ')}}`;
+    }
     case 'unknown':
       return 'unknown';
     case 'void':
@@ -186,6 +200,10 @@ export function createFunction(params: ParameterInfo[], returnType: LjosType): F
   return { kind: 'function', params, returnType };
 }
 
+export function createObjectLiteral(properties: Map<string, LjosType>): ObjectLiteralType {
+  return { kind: 'object', properties };
+}
+
 export function createClass(name: string, isAbstract = false): ClassType {
   return { kind: 'class', name, isAbstract, members: new Map() };
 }
@@ -235,6 +253,50 @@ function isSubclass(derived: ClassType, base: ClassType): boolean {
     current = current.superClass;
   }
   return false;
+}
+
+// Get all members of a class including inherited ones
+export function getAllClassMembers(classType: ClassType): Map<string, MemberInfo> {
+  const allMembers = new Map<string, MemberInfo>();
+  
+  // First, collect all inherited members (from base to derived)
+  const hierarchy: ClassType[] = [];
+  let current: ClassType | undefined = classType;
+  while (current) {
+    hierarchy.unshift(current); // Add to front so base classes come first
+    current = current.superClass;
+  }
+  
+  // Apply members from base to derived (derived overrides base)
+  for (const cls of hierarchy) {
+    for (const [name, member] of cls.members) {
+      // Skip private members from parent classes
+      if (cls !== classType && member.visibility === 'private') {
+        continue;
+      }
+      allMembers.set(name, member);
+    }
+  }
+  
+  return allMembers;
+}
+
+// Get member from class or its superclasses
+export function getClassMember(classType: ClassType, memberName: string): MemberInfo | undefined {
+  let current: ClassType | undefined = classType;
+  while (current) {
+    const member = current.members.get(memberName);
+    if (member) {
+      // Private members only accessible from the declaring class
+      if (current !== classType && member.visibility === 'private') {
+        current = current.superClass;
+        continue;
+      }
+      return member;
+    }
+    current = current.superClass;
+  }
+  return undefined;
 }
 
 // Built-in types (support both lowercase and Pascal case)

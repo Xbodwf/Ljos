@@ -1,5 +1,16 @@
 // AST Node definitions for Ljos language
 
+// Source location for error reporting
+export interface SourceLocation {
+  line: number;
+  column: number;
+}
+
+// Base interface for all AST nodes with location
+export interface BaseNode {
+  loc?: SourceLocation;
+}
+
 export type ASTNode =
   | Program
   | Statement
@@ -35,7 +46,7 @@ export type Statement =
   | DeferStatement
   | UsingStatement;
 
-export interface VariableDeclaration {
+export interface VariableDeclaration extends BaseNode {
   type: 'VariableDeclaration';
   kind: 'const' | 'mut';
   name: string;
@@ -43,7 +54,7 @@ export interface VariableDeclaration {
   init?: Expression;
 }
 
-export interface FunctionDeclaration {
+export interface FunctionDeclaration extends BaseNode {
   type: 'FunctionDeclaration';
   name: string;
   typeParameters?: string[];
@@ -207,7 +218,7 @@ export interface ElsePattern {
   type: 'ElsePattern';
 }
 
-export interface ReturnStatement {
+export interface ReturnStatement extends BaseNode {
   type: 'ReturnStatement';
   argument?: Expression;
 }
