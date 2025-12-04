@@ -12,7 +12,9 @@ export type LjosType =
   | UnknownType
   | VoidType
   | NullType
-  | ObjectLiteralType;
+  | ObjectLiteralType
+  | EnumType
+  | EnumMemberType;
 
 // Object literal type (for { key: value } expressions)
 export interface ObjectLiteralType {
@@ -79,6 +81,30 @@ export interface VoidType {
 
 export interface NullType {
   kind: 'null';
+}
+
+// Enum type (ADT-style enum with optional associated data)
+export interface EnumType {
+  kind: 'enum';
+  name: string;
+  members: Map<string, EnumMemberInfo>;
+}
+
+// Enum member info
+export interface EnumMemberInfo {
+  name: string;
+  valueType?: LjosType;           // 显式值的类型
+  associatedData?: LjosType[];    // 关联数据的类型列表
+  isCallable: boolean;            // 是否有关联数据（可调用）
+}
+
+// Enum member type (a specific variant of an enum)
+export interface EnumMemberType {
+  kind: 'enumMember';
+  enumName: string;
+  memberName: string;
+  valueType?: LjosType;
+  associatedData?: LjosType[];
 }
 
 export interface ParameterInfo {
@@ -148,6 +174,10 @@ export function typeToString(type: LjosType): string {
       }
       return `{${props.join(', ')}}`;
     }
+    case 'enum':
+      return type.name;
+    case 'enumMember':
+      return `${type.enumName}.${type.memberName}`;
     case 'unknown':
       return 'unknown';
     case 'void':
@@ -208,6 +238,40 @@ export function createClass(name: string, isAbstract = false): ClassType {
   return { kind: 'class', name, isAbstract, members: new Map() };
 }
 
+export function createEnum(name: string): EnumType {
+  return { kind: 'enum', name, members: new Map() };
+}
+
+export function createEnumMember(enumName: string, memberName: string, associatedData?: LjosType[]): EnumMemberType {
+  return { kind: 'enumMember', enumName, memberName, associatedData };
+}
+
+// Implicit type conversion rules
+const IMPLICIT_CONVERSIONS: Map<string, Set<string>> = new Map([
+  // Numeric type conversions
+  ['Int', new Set(['Float', 'Num'])],
+  ['Float', new Set(['Num'])],
+  ['Byte', new Set(['Int', 'Float', 'Num'])],
+  // Character type conversions
+  ['Char', new Set(['Str', 'Int'])],
+  // Fixed-width integer conversions
+  ['int8', new Set(['int16', 'int32', 'int64', 'Int', 'Float'])],
+  ['int16', new Set(['int32', 'int64', 'Int', 'Float'])],
+  ['int32', new Set(['int64', 'Int', 'Float'])],
+  ['uint8', new Set(['uint16', 'uint32', 'uint64', 'int16', 'int32', 'int64', 'Int', 'Float'])],
+  ['uint16', new Set(['uint32', 'uint64', 'int32', 'int64', 'Int', 'Float'])],
+  ['uint32', new Set(['uint64', 'int64', 'Float'])],
+  ['float', new Set(['double', 'Float'])],
+]);
+
+// Normalize primitive type name for comparison
+function normalizePrimitiveName(name: string): string {
+  const normalizeMap: Record<string, string> = {
+    'int': 'Int', 'float': 'Float', 'str': 'Str', 'bool': 'Bool',
+  };
+  return normalizeMap[name] || name;
+}
+
 export function isAssignable(target: LjosType, source: LjosType): boolean {
   // unknown is assignable to/from anything
   if (target.kind === 'unknown' || source.kind === 'unknown') return true;
@@ -222,12 +286,27 @@ export function isAssignable(target: LjosType, source: LjosType): boolean {
     if (target.kind === 'union') {
       return target.types.some(t => isAssignable(t, source));
     }
+    // enumMember is assignable to its enum type
+    if (source.kind === 'enumMember' && target.kind === 'enum') {
+      return (source as EnumMemberType).enumName === (target as EnumType).name;
+    }
     return false;
   }
   
   switch (target.kind) {
-    case 'primitive':
-      return target.name === (source as PrimitiveType).name || target.name === 'any';
+    case 'primitive': {
+      const targetName = normalizePrimitiveName(target.name);
+      const sourceName = normalizePrimitiveName((source as PrimitiveType).name);
+      
+      // Same type or any
+      if (targetName === sourceName || target.name === 'any') return true;
+      
+      // Check implicit conversions
+      const conversions = IMPLICIT_CONVERSIONS.get(sourceName);
+      if (conversions && conversions.has(targetName)) return true;
+      
+      return false;
+    }
     case 'class':
       return target.name === (source as ClassType).name || isSubclass(source as ClassType, target);
     case 'array':
@@ -240,6 +319,13 @@ export function isAssignable(target: LjosType, source: LjosType): boolean {
         if (!isAssignable(srcFn.params[i].type, target.params[i].type)) return false;
       }
       return isAssignable(target.returnType, srcFn.returnType);
+    }
+    case 'enum':
+      return (target as EnumType).name === (source as EnumType).name;
+    case 'enumMember': {
+      const targetMember = target as EnumMemberType;
+      const sourceMember = source as EnumMemberType;
+      return targetMember.enumName === sourceMember.enumName;
     }
     default:
       return true;

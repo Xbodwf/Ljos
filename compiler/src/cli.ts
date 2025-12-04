@@ -2,6 +2,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import chalk from 'chalk';
 import { Compiler } from './compiler';
 import { loadConfig, CompilerOptions } from './config';
 import { ProjectCompiler, initProject, isLjosProject } from './project';
@@ -149,9 +150,31 @@ function printVersion(): void {
   console.log('ljc v1.0.0');
 }
 
-function formatError(error: { message: string; line: number; column: number; file?: string }): string {
+function formatError(error: { message: string; line: number; column: number; file?: string }, source?: string): string {
   const location = error.file ? `${error.file}:${error.line}:${error.column}` : `${error.line}:${error.column}`;
-  return `\x1b[31mError\x1b[0m at ${location}: ${error.message}`;
+  let result = `${chalk.red('Error')} at ${chalk.cyan(location)}: ${error.message}`;
+  
+  // If source is provided, show the error line with highlighting
+  if (source && error.line > 0) {
+    const lines = source.split('\n');
+    const errorLine = lines[error.line - 1];
+    if (errorLine) {
+      result += '\n  ' + chalk.gray(`${error.line} |`) + ' ';
+      // Highlight the error portion (from column to end of word/token)
+      const col = error.column - 1;
+      const before = errorLine.substring(0, col);
+      // Find the end of the error token
+      let endCol = col;
+      while (endCol < errorLine.length && !/\s/.test(errorLine[endCol])) {
+        endCol++;
+      }
+      const errorPart = errorLine.substring(col, endCol) || errorLine.substring(col, col + 1);
+      const after = errorLine.substring(endCol);
+      result += before + chalk.red.bold(errorPart) + after;
+    }
+  }
+  
+  return result;
 }
 
 function compileFile(inputPath: string, outputPath?: string, compilerOptions?: CompilerOptions): boolean {
@@ -159,11 +182,18 @@ function compileFile(inputPath: string, outputPath?: string, compilerOptions?: C
   const result = compiler.compileToFile(inputPath, outputPath);
 
   if (result.success) {
-    console.log(`\x1b[32m✓\x1b[0m Compiled ${inputPath}`);
+    console.log(`${chalk.green('✓')} Compiled ${inputPath}`);
     return true;
   } else {
+    // Read source for error highlighting
+    let source: string | undefined;
+    try {
+      source = fs.readFileSync(inputPath, 'utf-8');
+    } catch {
+      // Ignore read errors
+    }
     for (const error of result.errors) {
-      console.error(formatError(error));
+      console.error(formatError(error, source));
     }
     return false;
   }
@@ -228,10 +258,16 @@ function main(): void {
         
         console.log('');
         if (result.success) {
-          console.log(`\x1b[32m✓\x1b[0m Compiled ${result.filesCompiled} file(s) in ${result.duration}ms`);
+          // Show detailed timing information
+          let timeInfo = `${chalk.cyan(result.ljcDuration + 'ms')} ljc`;
+          if (result.thirdPartyDuration > 0) {
+            timeInfo += ` + ${chalk.yellow(result.thirdPartyDuration + 'ms')} third-party`;
+            timeInfo += ` = ${chalk.green(result.duration + 'ms')} total`;
+          }
+          console.log(`${chalk.green('✓')} Compiled ${result.filesCompiled} file(s) in ${timeInfo}`);
           process.exit(0);
         } else {
-          console.log(`\x1b[31m✗\x1b[0m ${result.filesFailed} file(s) failed to compile`);
+          console.log(`${chalk.red('✗')} ${result.filesFailed} file(s) failed to compile`);
           process.exit(1);
         }
       }

@@ -85,6 +85,11 @@ export class CppCodeGenerator {
     }
     code += '\nusing namespace std;\n';
     
+    // Helpers
+    code += 'inline string to_string(const string& s) { return s; }\n';
+    code += 'inline string to_string(const char* s) { return string(s); }\n';
+    code += 'inline string to_string(bool b) { return b ? "true" : "false"; }\n';
+
     // Add forward declarations
     if (this.forwardDecls.length > 0) {
       code += '\n// Forward declarations\n';
@@ -129,6 +134,10 @@ export class CppCodeGenerator {
         this.indent = 0;
         this.globalDecls.push(this.generateClassDeclaration(stmt));
         break;
+      case 'EnumDeclaration':
+        this.indent = 0;
+        this.globalDecls.push(this.generateEnumDeclaration(stmt));
+        break;
       case 'FunctionDeclaration':
         this.indent = 0;
         this.globalDecls.push(this.generateFunctionDeclaration(stmt));
@@ -149,6 +158,9 @@ export class CppCodeGenerator {
           } else if (stmt.declaration.type === 'ClassDeclaration') {
             // For classes, add forward declaration
             this.exportedDecls.push(`class ${stmt.declaration.name};`);
+          } else if (stmt.declaration.type === 'EnumDeclaration') {
+            // For enums, add enum declaration to header
+            this.exportedDecls.push(this.generateEnumDeclaration(stmt.declaration));
           }
         }
         break;
@@ -205,12 +217,49 @@ export class CppCodeGenerator {
     
     if (type.kind === 'simple') {
       switch (type.name) {
+        // Basic types
         case 'Int': return 'int';
         case 'Float': return 'double';
         case 'Str': return 'string';
         case 'Bool': return 'bool';
         case 'Void': return 'void';
+        case 'Any': 
+          this.includes.add('#include <any>');
+          return 'std::any';
         case 'Nul': return 'nullptr_t';
+        case 'Char': return 'char';
+        case 'Byte': return 'unsigned char';
+        
+        // C++ style integer types
+        case 'short': return 'short';
+        case 'long': return 'long';
+        case 'long long': return 'long long';
+        
+        // Unsigned types (C++ style)
+        case 'unsigned char': return 'unsigned char';
+        case 'unsigned short': return 'unsigned short';
+        case 'unsigned int': return 'unsigned int';
+        case 'unsigned long': return 'unsigned long';
+        case 'unsigned long long': return 'unsigned long long';
+        
+        // Fixed-width integer types
+        case 'int8': return 'int8_t';
+        case 'int16': return 'int16_t';
+        case 'int32': return 'int32_t';
+        case 'int64': return 'int64_t';
+        case 'uint8': return 'uint8_t';
+        case 'uint16': return 'uint16_t';
+        case 'uint32': return 'uint32_t';
+        case 'uint64': return 'uint64_t';
+        
+        // Floating point types
+        case 'float': return 'float';
+        case 'double': return 'double';
+        
+        // Size types
+        case 'size_t': return 'size_t';
+        case 'ptrdiff_t': return 'ptrdiff_t';
+        
         default: return type.name; // Class name or other
       }
     } else if (type.kind === 'array') {
@@ -307,6 +356,14 @@ export class CppCodeGenerator {
         return 'string';
       }
     }
+    if (expr.type === 'CallExpression' && expr.callee.type === 'Identifier') {
+      // Known string returning functions
+      if (['repeatStr', 'greet', 'farewell', 'greetWithTime', 'formatNumber', 
+           'padLeft', 'padRight', 'separator', 'boxTitle', 'bordered', 
+           'success', 'error', 'warning', 'info', 'debug', 'toBinary'].includes(expr.callee.name)) {
+        return 'string';
+      }
+    }
     return 'auto';
   }
 
@@ -365,7 +422,8 @@ export class CppCodeGenerator {
     // Generate fields
     for (const field of fields) {
       const fieldType = this.mapType(field.typeAnnotation);
-      code += `    ${fieldType} ${field.name}`;
+      const staticPrefix = field.isStatic ? 'static ' : '';
+      code += `    ${staticPrefix}${fieldType} ${field.name}`;
       if (field.init) {
         code += ` = ${this.generateExpression(field.init)}`;
       }
@@ -423,13 +481,14 @@ export class CppCodeGenerator {
 
   private generateMethodDeclaration(method: AST.MethodDeclaration): string {
     const returnType = this.mapType(method.returnType);
+    const staticPrefix = method.isStatic ? 'static ' : '';
     
     const params = method.params.map(p => {
       const pType = this.mapType(p.typeAnnotation);
       return `${pType} ${p.name}`;
     }).join(', ');
     
-    let code = `    ${returnType} ${method.name}(${params}) {\n`;
+    let code = `    ${staticPrefix}${returnType} ${method.name}(${params}) {\n`;
     
     if (method.body) {
       const oldIndent = this.indent;
@@ -442,6 +501,70 @@ export class CppCodeGenerator {
     
     code += '    }\n\n';
     return code;
+  }
+
+  private generateEnumDeclaration(stmt: AST.EnumDeclaration): string {
+    const hasAssociatedData = stmt.members.some(m => m.associatedData && m.associatedData.length > 0);
+    
+    if (hasAssociatedData) {
+      // 带关联数据的 enum 使用 std::variant (C++17)
+      this.includes.add('#include <variant>');
+      
+      let code = `// ADT-style enum: ${stmt.name}\n`;
+      
+      // 为每个带关联数据的成员生成结构体
+      for (const m of stmt.members) {
+        if (m.associatedData && m.associatedData.length > 0) {
+          code += `struct ${stmt.name}_${m.name} {\n`;
+          for (const param of m.associatedData) {
+            const pType = this.mapType(param.typeAnnotation);
+            code += `    ${pType} ${param.name};\n`;
+          }
+          code += `};\n`;
+        }
+      }
+      
+      // 生成 variant 类型
+      const variantTypes = stmt.members.map(m => {
+        if (m.associatedData && m.associatedData.length > 0) {
+          return `${stmt.name}_${m.name}`;
+        }
+        return 'monostate'; // 无数据的变体
+      });
+      code += `using ${stmt.name} = variant<${variantTypes.join(', ')}>;\n`;
+      
+      // 生成工厂函数
+      for (let i = 0; i < stmt.members.length; i++) {
+        const m = stmt.members[i];
+        if (m.associatedData && m.associatedData.length > 0) {
+          const params = m.associatedData.map(p => {
+            const pType = this.mapType(p.typeAnnotation);
+            return `${pType} ${p.name}`;
+          }).join(', ');
+          const args = m.associatedData.map(p => p.name).join(', ');
+          code += `inline ${stmt.name} ${stmt.name}_${m.name}_create(${params}) { return ${stmt.name}_${m.name}{${args}}; }\n`;
+        }
+      }
+      
+      return code;
+    } else {
+      // 简单 enum
+      let code = `enum class ${stmt.name} {\n`;
+      
+      for (let i = 0; i < stmt.members.length; i++) {
+        const m = stmt.members[i];
+        const comma = i < stmt.members.length - 1 ? ',' : '';
+        
+        if (m.value) {
+          code += `    ${m.name} = ${this.generateExpression(m.value)}${comma}\n`;
+        } else {
+          code += `    ${m.name}${comma}\n`;
+        }
+      }
+      
+      code += '};\n';
+      return code;
+    }
   }
 
   private generateIfStatement(stmt: AST.IfStatement): string {
@@ -651,6 +774,9 @@ export class CppCodeGenerator {
     switch (expr.type) {
       case 'Literal':
         return this.generateLiteral(expr);
+      case 'CharLiteral':
+        // C++ char literal
+        return `'${this.escapeChar(expr.value)}'`;
       case 'Identifier':
         return this.generateIdentifier(expr);
       case 'BinaryExpression':
@@ -681,9 +807,18 @@ export class CppCodeGenerator {
         return this.generateLogicalExpression(expr);
       case 'ConditionalExpression':
         return this.generateConditionalExpression(expr);
+      case 'IfExpression':
+        return this.generateIfExpression(expr);
       default:
         return `/* TODO: ${expr.type} */`;
     }
+  }
+
+  private generateIfExpression(expr: AST.IfExpression): string {
+    const condition = this.generateExpression(expr.condition);
+    const consequent = this.generateExpression(expr.consequent);
+    const alternate = this.generateExpression(expr.alternate);
+    return `(${condition} ? ${consequent} : ${alternate})`;
   }
 
   private generateLiteral(expr: AST.Literal): string {
@@ -998,5 +1133,17 @@ export class CppCodeGenerator {
     const consequent = this.generateExpression(expr.consequent);
     const alternate = this.generateExpression(expr.alternate);
     return `(${test} ? ${consequent} : ${alternate})`;
+  }
+
+  private escapeChar(c: string): string {
+    switch (c) {
+      case '\n': return '\\n';
+      case '\r': return '\\r';
+      case '\t': return '\\t';
+      case '\\': return '\\\\';
+      case '\'': return '\\\'';
+      case '\0': return '\\0';
+      default: return c;
+    }
   }
 }

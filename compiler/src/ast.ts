@@ -117,7 +117,13 @@ export interface ConstructorDeclaration {
 export interface EnumDeclaration {
   type: 'EnumDeclaration';
   name: string;
-  members: { name: string }[];
+  members: EnumMember[];
+}
+
+export interface EnumMember {
+  name: string;
+  value?: Expression;           // 显式值: A = 1, B = "hello"
+  associatedData?: Parameter[]; // 关联数据: Some(value: Int), Error(code: Int, msg: Str)
 }
 
 export interface Parameter {
@@ -295,6 +301,7 @@ export interface UsingStatement {
 // ============ Expressions ============
 export type Expression =
   | Literal
+  | CharLiteral
   | Identifier
   | BinaryExpression
   | UnaryExpression
@@ -317,6 +324,7 @@ export type Expression =
   | SendExpression
   | ReceiveExpression
   | WhenExpression
+  | IfExpression
   | TypeofExpression
   | InstanceofExpression
   | VoidExpression
@@ -331,9 +339,17 @@ export interface Literal {
   raw: string;
 }
 
+export interface CharLiteral {
+  type: 'CharLiteral';
+  value: string;
+  raw: string;
+}
+
 export interface Identifier {
   type: 'Identifier';
   name: string;
+  line?: number;
+  column?: number;
 }
 
 export interface BinaryExpression {
@@ -463,6 +479,14 @@ export interface WhenExpression {
   type: 'WhenExpression';
   discriminant?: Expression;
   cases: WhenCase[];
+}
+
+// if 表达式: const result = if (a > b) a else b
+export interface IfExpression {
+  type: 'IfExpression';
+  condition: Expression;
+  consequent: Expression;
+  alternate: Expression;
 }
 
 export interface TypeofExpression {

@@ -1,4 +1,4 @@
-# Ljos Project Configuration
+#/ljos/:package:config
 
 import { defineConfig } : "/std/config"
 

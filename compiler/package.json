@@ -1,6 +1,6 @@
 {
   "name": "ljos-compiler",
-  "version": "2.2.3",
+  "version": "2.6.0",
   "description": "Ljos programming language compiler to JavaScript",
   "main": "dist/index.js",
   "bin": {
@@ -12,12 +12,21 @@
     "dev": "ts-node src/cli.ts",
     "test": "ts-node src/test.ts"
   },
-  "keywords": ["ljos", "compiler", "programming-language"],
+  "keywords": [
+    "ljos",
+    "compiler",
+    "programming-language"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@babel/generator": "~7.23.6",
+    "@babel/types": "~7.23.6",
+    "chalk": "^5.6.2",
     "typescript": "^5.3.2"
   },
   "devDependencies": {
+    "@babel/core": "~7.23.6",
+    "@types/babel__generator": "^7.6.8",
     "@types/node": "^20.10.0",
     "ts-node": "^10.9.2"
   }

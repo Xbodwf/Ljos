@@ -6,7 +6,8 @@ import {
   typeToString, createPrimitive, createUnknown, createVoid, createNull,
   createArray, createFunction, createClass, isAssignable, BUILTIN_TYPES,
   ClassType, FunctionType, ParameterInfo, PrimitiveType, ObjectLiteralType,
-  getClassMember, getAllClassMembers, createObjectLiteral
+  getClassMember, getAllClassMembers, createObjectLiteral,
+  EnumType, EnumMemberInfo, EnumMemberType, createEnum, createEnumMember
 } from './types';
 
 export interface DiagnosticInfo {
@@ -716,22 +717,91 @@ export class SyntaxChecker {
     return params;
   }
 
+  /**
+   * 解析 enum 成员的关联数据参数
+   * 例如: Some(value: Int) 中的 (value: Int)
+   */
+  private collectEnumParams(): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+    if (!this.match(TokenType.LPAREN)) return params;
+    
+    if (!this.checkType(TokenType.RPAREN)) {
+      do {
+        if (this.checkType(TokenType.IDENTIFIER)) {
+          const name = this.advance().value;
+          let type: LjosType = createUnknown();
+          if (this.match(TokenType.COLON)) {
+            type = this.parseTypeAnnotation();
+          }
+          params.push({ name, type, optional: false });
+        } else {
+          // 跳过无法识别的 token
+          this.advance();
+        }
+      } while (this.match(TokenType.COMMA));
+    }
+    
+    if (this.checkType(TokenType.RPAREN)) this.advance();
+    return params;
+  }
+
   private collectEnum(): void {
     this.advance(); // consume 'enum'
     if (!this.checkType(TokenType.IDENTIFIER)) return;
     const nameToken = this.advance();
+    const enumName = nameToken.value;
     
-    this.globalScope.symbols.set(nameToken.value, {
-      name: nameToken.value,
-      type: createUnknown(),
+    // 创建 enum 类型
+    const enumType: EnumType = { kind: 'enum', name: enumName, members: new Map() };
+    
+    // 解析 enum 成员
+    if (this.match(TokenType.LBRACE)) {
+      while (!this.checkType(TokenType.RBRACE) && !this.isAtEnd()) {
+        if (this.checkType(TokenType.IDENTIFIER)) {
+          const memberToken = this.advance();
+          const memberName = memberToken.value;
+          
+          const memberInfo: EnumMemberInfo = {
+            name: memberName,
+            isCallable: false,
+          };
+          
+          // 检查关联数据: Some(value: Int)
+          if (this.checkType(TokenType.LPAREN)) {
+            const params = this.collectEnumParams();
+            memberInfo.associatedData = params.map(p => p.type);
+            memberInfo.isCallable = params.length > 0;
+          }
+          
+          // 检查显式值: A = 1
+          if (this.match(TokenType.ASSIGN)) {
+            this.skipExpression();
+          }
+          
+          enumType.members.set(memberName, memberInfo);
+          
+          // 跳过逗号
+          this.match(TokenType.COMMA);
+        } else {
+          this.advance();
+        }
+      }
+      if (this.checkType(TokenType.RBRACE)) this.advance();
+    }
+    
+    // 生成 enum 文档
+    const memberNames = Array.from(enumType.members.keys());
+    const doc = `枚举 ${enumName}\n\n成员: ${memberNames.join(', ')}`;
+    
+    this.globalScope.symbols.set(enumName, {
+      name: enumName,
+      type: enumType,
       kind: 'enum',
       isConst: true,
       declarationLine: nameToken.line,
       declarationColumn: nameToken.column,
-      documentation: `枚举 ${nameToken.value}`
+      documentation: doc
     });
-
-    this.skipBlock();
   }
 
   private collectFunction(): void {
@@ -1023,6 +1093,37 @@ export class SyntaxChecker {
       case 'object': {
         // Format object literal type with expanded properties
         return this.formatObjectTypeHover(name, type.properties);
+      }
+      case 'enum': {
+        // Format enum type with members
+        const members: string[] = [];
+        type.members.forEach((member, memberName) => {
+          if (member.isCallable && member.associatedData) {
+            const params = member.associatedData.map((t, i) => `arg${i}: ${typeToString(t)}`).join(', ');
+            members.push(`  ${memberName}(${params})`);
+          } else {
+            members.push(`  ${memberName}`);
+          }
+        });
+        
+        const maxLines = 6;
+        let memberStr: string;
+        if (members.length === 0) {
+          memberStr = ' ';
+        } else if (members.length <= maxLines) {
+          memberStr = `\n${members.join('\n')}\n`;
+        } else {
+          memberStr = `\n${members.slice(0, maxLines - 1).join('\n')}\n  ... (${members.length - maxLines + 1} more)\n`;
+        }
+        
+        return `\`\`\`ljos\nenum ${name} {${memberStr}}\n\`\`\``;
+      }
+      case 'enumMember': {
+        if (type.associatedData && type.associatedData.length > 0) {
+          const params = type.associatedData.map((t, i) => `arg${i}: ${typeToString(t)}`).join(', ');
+          return `\`\`\`ljos\n${type.enumName}.${type.memberName}(${params})\n\`\`\``;
+        }
+        return `\`\`\`ljos\n${type.enumName}.${type.memberName}\n\`\`\``;
       }
       case 'primitive':
       case 'generic':
@@ -1353,7 +1454,35 @@ export class SyntaxChecker {
 
     while (!this.checkType(TokenType.RBRACE) && !this.isAtEnd()) {
       this.consume(ErrorCode.EXPECTED_IDENTIFIER, TokenType.IDENTIFIER);
-      if (!this.match(TokenType.COMMA)) break;
+      
+      // 处理带关联数据的枚举成员: Some(value: Int)
+      if (this.match(TokenType.LPAREN)) {
+        while (!this.checkType(TokenType.RPAREN) && !this.isAtEnd()) {
+          // 参数名
+          if (this.checkType(TokenType.IDENTIFIER)) {
+            this.advance();
+          }
+          // 类型注解
+          if (this.match(TokenType.COLON)) {
+            this.typeAnnotation();
+          }
+          if (!this.match(TokenType.COMMA)) break;
+        }
+        this.consume(ErrorCode.EXPECTED_RPAREN, TokenType.RPAREN);
+      }
+      
+      // 处理带显式值的枚举成员: OK = 200
+      if (this.match(TokenType.ASSIGN)) {
+        // 只解析简单字面量值，不使用 expression() 避免消费过多 token
+        if (this.checkType(TokenType.NUMBER) || 
+            this.checkType(TokenType.STRING) || 
+            this.checkType(TokenType.IDENTIFIER)) {
+          this.advance();
+        }
+      }
+      
+      // 逗号是可选的
+      this.match(TokenType.COMMA);
     }
 
     this.consume(ErrorCode.EXPECTED_RBRACE, TokenType.RBRACE);
@@ -1363,16 +1492,12 @@ export class SyntaxChecker {
     this.advance(); // consume 'fn'
     const nameToken = this.consume(ErrorCode.EXPECTED_FUNCTION_NAME, TokenType.IDENTIFIER);
 
-    // Add hover info
-    const symbol = this.lookupSymbol(nameToken.value);
-    if (symbol) {
-      this.addHoverInfo(nameToken, symbol.type, symbol.documentation);
-    }
-
     // Generic type parameters
+    const typeParams: string[] = [];
     if (this.match(TokenType.LT)) {
       do {
-        this.consume(ErrorCode.EXPECTED_IDENTIFIER, TokenType.IDENTIFIER);
+        const tp = this.consume(ErrorCode.EXPECTED_IDENTIFIER, TokenType.IDENTIFIER);
+        typeParams.push(tp.value);
       } while (this.match(TokenType.COMMA));
       this.consume(ErrorCode.EXPECTED_GT, TokenType.GT);
     }
@@ -1383,12 +1508,65 @@ export class SyntaxChecker {
     const fnScope: Scope = { parent: this.currentScope, symbols: new Map() };
     this.currentScope = fnScope;
     
-    this.parameterList();
+    // Collect parameter info for function type
+    const params: { name: string; type: LjosType; optional: boolean }[] = [];
+    if (!this.checkType(TokenType.RPAREN)) {
+      do {
+        const paramToken = this.consume(ErrorCode.EXPECTED_PARAMETER_NAME, TokenType.IDENTIFIER);
+        let paramType: LjosType = createUnknown();
+        let optional = false;
+        
+        if (this.match(TokenType.COLON)) {
+          paramType = this.parseTypeAnnotation();
+        }
+        
+        if (this.match(TokenType.ASSIGN)) {
+          optional = true;
+          this.expression();
+        }
+        
+        params.push({ name: paramToken.value, type: paramType, optional });
+        
+        // Register parameter in current scope
+        this.currentScope.symbols.set(paramToken.value, {
+          name: paramToken.value,
+          type: paramType,
+          kind: 'parameter',
+          isConst: true,
+          declarationLine: paramToken.line,
+          declarationColumn: paramToken.column
+        });
+        
+        this.addHoverInfo(paramToken, paramType);
+      } while (this.match(TokenType.COMMA));
+    }
     this.consume(ErrorCode.EXPECTED_RPAREN, TokenType.RPAREN);
 
+    // Parse return type
+    let returnType: LjosType = createVoid();
     if (this.match(TokenType.COLON)) {
-      this.typeAnnotation();
+      returnType = this.parseTypeAnnotation();
     }
+
+    // Create function type and register in parent scope
+    const fnType: LjosType = {
+      kind: 'function',
+      params,
+      returnType,
+      typeParameters: typeParams.length > 0 ? typeParams : undefined
+    };
+    
+    // Register function in parent scope (before entering function body)
+    fnScope.parent!.symbols.set(nameToken.value, {
+      name: nameToken.value,
+      type: fnType,
+      kind: 'function',
+      isConst: true,
+      declarationLine: nameToken.line,
+      declarationColumn: nameToken.column
+    });
+    
+    this.addHoverInfo(nameToken, fnType);
 
     this.blockStatement();
     this.currentScope = fnScope.parent!;
@@ -1441,6 +1619,19 @@ export class SyntaxChecker {
       const exprType = noSemicolon ? this.expressionNoSemicolon() : this.expressionWithType();
       if (!hasType) {
         varType = exprType;
+      } else {
+        // Type check: verify initializer type matches declared type
+        if (exprType.kind !== 'unknown' && varType.kind !== 'unknown') {
+          if (!isAssignable(varType, exprType)) {
+            this.addDiagnostic(
+              ErrorCode.TYPE_MISMATCH,
+              nameToken.line, nameToken.column,
+              nameToken.line, nameToken.column + nameToken.value.length,
+              'error',
+              typeToString(varType), typeToString(exprType)
+            );
+          }
+        }
       }
     } else if (!hasType) {
       throw new ParserError(ErrorCode.EXPECTED_INITIALIZER_OR_TYPE, this.peek());
@@ -1598,9 +1789,13 @@ export class SyntaxChecker {
     this.consume(ErrorCode.EXPECTED_LBRACE, TokenType.LBRACE);
 
     while (!this.checkType(TokenType.RBRACE) && !this.isAtEnd()) {
+      // Create a new scope for each branch to hold pattern bindings
+      const branchScope: Scope = { parent: this.currentScope, symbols: new Map() };
+      this.currentScope = branchScope;
+      
       if (!this.match(TokenType.ELSE)) {
-        // Use expressionNoComma to avoid consuming comma as logical AND
-        this.expressionNoComma();
+        // Parse pattern: could be enum pattern like Result.Success(v) or expression
+        this.whenPattern();
       }
       
       if (this.checkType(TokenType.LBRACE)) {
@@ -1614,11 +1809,62 @@ export class SyntaxChecker {
           this.expressionNoComma();
         }
       }
+      
+      // Restore parent scope
+      this.currentScope = branchScope.parent!;
+      
       // Consume optional comma separator between branches
       this.match(TokenType.COMMA);
     }
 
     this.consume(ErrorCode.EXPECTED_RBRACE, TokenType.RBRACE);
+  }
+
+  private whenPattern(): void {
+    // Parse enum pattern like: Result.Success(v), Result.Error(code, msg)
+    // Or simple expression like: n > 0, else
+    
+    if (this.checkType(TokenType.IDENTIFIER)) {
+      const startToken = this.peek();
+      this.advance(); // consume first identifier
+      
+      // Check if this is an enum pattern (Enum.Variant or Enum.Variant(bindings))
+      if (this.match(TokenType.DOT)) {
+        // Enum.Variant pattern
+        if (this.checkType(TokenType.IDENTIFIER)) {
+          this.advance(); // consume variant name
+          
+          // Check for pattern bindings: (v) or (code, msg)
+          if (this.match(TokenType.LPAREN)) {
+            if (!this.checkType(TokenType.RPAREN)) {
+              do {
+                if (this.checkType(TokenType.IDENTIFIER)) {
+                  const bindingToken = this.advance();
+                  // Add binding to current scope
+                  this.currentScope.symbols.set(bindingToken.value, {
+                    name: bindingToken.value,
+                    type: createUnknown(),
+                    kind: 'variable',
+                    isConst: false,
+                    declarationLine: bindingToken.line,
+                    declarationColumn: bindingToken.column
+                  });
+                }
+              } while (this.match(TokenType.COMMA));
+            }
+            this.consume(ErrorCode.EXPECTED_RPAREN, TokenType.RPAREN);
+          }
+        }
+      } else {
+        // Not an enum pattern, might be a variable or start of expression
+        // Backtrack and parse as expression
+        this.current--;
+        this.expressionNoComma();
+      }
+    } else {
+      // Parse as regular expression
+      this.expressionNoComma();
+    }
   }
 
   private returnStatement(): void {
@@ -1773,18 +2019,18 @@ export class SyntaxChecker {
 
   private logicalOr(): LjosType {
     let type = this.logicalAnd();
-    while (this.match(TokenType.PIPE, TokenType.SEMICOLON)) {
+    while (this.match(TokenType.OR, TokenType.PIPE, TokenType.SEMICOLON)) {
       this.logicalAnd();
-      type = createPrimitive('bool');
+      type = createPrimitive('Bool');
     }
     return type;
   }
 
   private logicalAnd(): LjosType {
     let type = this.equality();
-    while (this.match(TokenType.AMP, TokenType.COMMA)) {
+    while (this.match(TokenType.AND, TokenType.AMP, TokenType.COMMA)) {
       this.equality();
-      type = createPrimitive('bool');
+      type = createPrimitive('Bool');
     }
     return type;
   }
@@ -1982,8 +2228,12 @@ export class SyntaxChecker {
       return createPrimitive('Int');
     }
 
-    if (this.match(TokenType.STRING, TokenType.RAW_STRING)) {
+    if (this.match(TokenType.STRING, TokenType.RAW_STRING, TokenType.TEMPLATE_STRING)) {
       return createPrimitive('Str');
+    }
+
+    if (this.match(TokenType.CHAR)) {
+      return createPrimitive('Char');
     }
 
     if (this.match(TokenType.THIS)) {
@@ -2014,16 +2264,27 @@ export class SyntaxChecker {
       }
     }
 
-    if (this.match(TokenType.LPAREN)) {
-      // Check for arrow function
+    if (this.checkType(TokenType.LPAREN)) {
+      // Save position before consuming '(' to allow collectParams to work
+      const lparenPos = this.current;
+      this.advance(); // consume '('
+      
+      // Check for arrow function with no parameters: () =>
       if (this.checkType(TokenType.RPAREN)) {
         this.advance();
         this.consume(ErrorCode.EXPECTED_ARROW, TokenType.ARROW);
+        
+        // Create arrow function scope (no parameters to register)
+        const arrowScope: Scope = { parent: this.currentScope, symbols: new Map() };
+        this.currentScope = arrowScope;
+        
         if (this.checkType(TokenType.LBRACE)) {
           this.blockStatement();
         } else {
           this.expression();
         }
+        
+        this.currentScope = arrowScope.parent!;
         return createFunction([], createUnknown());
       }
 
@@ -2041,18 +2302,37 @@ export class SyntaxChecker {
         isArrow = true;
       }
       
-      this.current = savedPos;
-
       if (isArrow) {
+        // Restore to before '(' so collectParams can consume it
+        this.current = lparenPos;
         const params = this.collectParams();
         this.consume(ErrorCode.EXPECTED_ARROW, TokenType.ARROW);
+        
+        // Create arrow function scope and register parameters
+        const arrowScope: Scope = { parent: this.currentScope, symbols: new Map() };
+        for (const param of params) {
+          arrowScope.symbols.set(param.name, {
+            name: param.name,
+            type: param.type,
+            kind: 'parameter',
+            isConst: true,
+            declarationLine: 0,
+            declarationColumn: 0
+          });
+        }
+        this.currentScope = arrowScope;
+        
         if (this.checkType(TokenType.LBRACE)) {
           this.blockStatement();
         } else {
           this.expression();
         }
+        
+        this.currentScope = arrowScope.parent!;
         return createFunction(params, createUnknown());
       } else {
+        // Restore to after '(' for grouped expression
+        this.current = savedPos;
         const type = this.expressionWithType();
         this.consume(ErrorCode.EXPECTED_RPAREN, TokenType.RPAREN);
         return type;

@@ -1,3 +1,4 @@
+#/ljos/:package:config
 # Ljos Project Configuration for LLVM Build
 
 import { defineConfig } : "/std/config"

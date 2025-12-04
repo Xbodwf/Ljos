@@ -1,105 +1,292 @@
 import * as vscode from 'vscode';
 import { SyntaxChecker } from './ljos/checker';
 import { KEYWORDS } from './ljos/tokens';
+import { initI18n, getMessages, Messages } from './i18n';
 
-// Ljos 关键字及其描述
-const KEYWORD_COMPLETIONS: { label: string; detail: string; documentation: string; insertText?: string }[] = [
-  // 声明关键字
-  { label: 'const', detail: '常量声明', documentation: '声明一个不可变的常量', insertText: 'const ' },
-  { label: 'mut', detail: '变量声明', documentation: '声明一个可变的变量', insertText: 'mut ' },
-  { label: 'fn', detail: '函数声明', documentation: '声明一个函数', insertText: 'fn ${1:name}(${2:params}): ${3:ReturnType} {\n\t$0\n}' },
-  { label: 'class', detail: '类声明', documentation: '声明一个类', insertText: 'class ${1:Name} {\n\t$0\n}' },
-  { label: 'abstract', detail: '抽象类', documentation: '声明一个抽象类', insertText: 'abstract class ${1:Name} {\n\t$0\n}' },
-  { label: 'enum', detail: '枚举声明', documentation: '声明一个枚举类型', insertText: 'enum ${1:Name} {\n\t$0\n}' },
-  { label: 'type', detail: '类型别名', documentation: '声明一个类型别名', insertText: 'type ${1:Name} = $0' },
-  { label: 'interface', detail: '接口声明', documentation: '声明一个接口', insertText: 'interface ${1:Name} {\n\t$0\n}' },
-  
-  // 控制流
-  { label: 'if', detail: '条件语句', documentation: '条件判断语句', insertText: 'if (${1:condition}) {\n\t$0\n}' },
-  { label: 'else', detail: '否则分支', documentation: 'if 语句的否则分支' },
-  { label: 'for', detail: '循环语句', documentation: 'for 循环', insertText: 'for (${1:item} in ${2:iterable}) {\n\t$0\n}' },
-  { label: 'while', detail: 'while 循环', documentation: '当条件为真时循环', insertText: 'while (${1:condition}) {\n\t$0\n}' },
-  { label: 'do', detail: 'do-while 循环', documentation: '先执行后判断的循环', insertText: 'do {\n\t$0\n} while (${1:condition})' },
-  { label: 'when', detail: '模式匹配', documentation: '类似 switch 的模式匹配语句', insertText: 'when (${1:value}) {\n\t${2:pattern} => {\n\t\t$0\n\t}\n}' },
-  { label: 'break', detail: '跳出循环', documentation: '跳出当前循环' },
-  { label: 'continue', detail: '继续循环', documentation: '跳过当前迭代，继续下一次循环' },
-  { label: 'return', detail: '返回语句', documentation: '从函数返回值', insertText: 'return $0' },
-  
-  // 异常处理
-  { label: 'try', detail: '异常捕获', documentation: '尝试执行可能抛出异常的代码', insertText: 'try {\n\t$0\n} catch (${1:e}) {\n\t\n}' },
-  { label: 'catch', detail: '捕获异常', documentation: '捕获并处理异常' },
-  { label: 'finally', detail: '最终执行', documentation: '无论是否异常都会执行的代码块' },
-  { label: 'throw', detail: '抛出异常', documentation: '抛出一个异常', insertText: 'throw $0' },
-  
-  // 类相关
-  { label: 'extends', detail: '继承', documentation: '继承一个类' },
-  { label: 'implements', detail: '实现接口', documentation: '实现一个或多个接口' },
-  { label: 'static', detail: '静态成员', documentation: '声明静态成员' },
-  { label: 'constructor', detail: '构造函数', documentation: '类的构造函数', insertText: 'constructor(${1:params}) {\n\t$0\n}' },
-  { label: 'this', detail: '当前实例', documentation: '引用当前类实例' },
-  { label: 'super', detail: '父类引用', documentation: '引用父类' },
-  { label: 'new', detail: '创建实例', documentation: '创建类的新实例', insertText: 'new ${1:ClassName}($0)' },
-  
-  // 访问修饰符
-  { label: 'public', detail: '公开访问', documentation: '成员可被外部访问' },
-  { label: 'private', detail: '私有访问', documentation: '成员只能在类内部访问' },
-  { label: 'protected', detail: '受保护访问', documentation: '成员可被子类访问' },
-  { label: 'readonly', detail: '只读', documentation: '成员只能在初始化时赋值' },
-  
-  // 模块
-  { label: 'import', detail: '导入', documentation: '从模块导入', insertText: 'import { $1 }: "${2:module}"' },
-  { label: 'export', detail: '导出', documentation: '导出模块成员', insertText: 'export ' },
-  { label: 'default', detail: '默认导出', documentation: '模块的默认导出' },
-  { label: 'as', detail: '别名', documentation: '导入/导出时使用别名' },
-  
-  // 类型操作
-  { label: 'typeof', detail: '获取类型', documentation: '获取值的类型字符串' },
-  { label: 'instanceof', detail: '实例检查', documentation: '检查对象是否是某个类的实例' },
-  { label: 'is', detail: '类型检查', documentation: '类型守卫，检查值是否为指定类型' },
-  { label: 'of', detail: '类型转换', documentation: '类型断言' },
-  
-  // 异步
-  { label: 'async', detail: '异步函数', documentation: '声明异步函数' },
-  { label: 'await', detail: '等待异步', documentation: '等待 Promise 完成' },
-  { label: 'go', detail: '协程', documentation: '启动一个协程' },
-  { label: 'chan', detail: '通道', documentation: '声明一个通道' },
-  { label: 'yield', detail: '生成器', documentation: '生成器函数中产出值' },
-  
-  // 资源管理
-  { label: 'defer', detail: '延迟执行', documentation: '在函数返回前执行' },
-  { label: 'using', detail: '资源管理', documentation: '自动管理资源的生命周期' },
-  
-  // 内存管理
-  { label: 'move', detail: '移动语义', documentation: '转移所有权' },
-  { label: 'borrow', detail: '借用', documentation: '借用引用' },
-  
-  // 其他
-  { label: 'macro', detail: '宏', documentation: '定义宏' },
-  { label: 'where', detail: '类型约束', documentation: '泛型类型约束' },
-  { label: 'in', detail: '包含检查', documentation: '检查元素是否在集合中' },
-  { label: 'void', detail: '空类型', documentation: '表示无返回值' },
-  { label: 'delete', detail: '删除', documentation: '删除对象属性' },
-  
-  // 字面量
-  { label: 'true', detail: '布尔真', documentation: '布尔值 true' },
-  { label: 'false', detail: '布尔假', documentation: '布尔值 false' },
-  { label: 'nul', detail: '空值', documentation: 'Ljos 的空值' },
-  { label: 'null', detail: '空值', documentation: 'JavaScript 兼容的空值' },
-];
+// Initialize i18n on module load
+let i18nMessages: Messages;
 
-// 内置类型补全
-const TYPE_COMPLETIONS: { label: string; detail: string; documentation: string }[] = [
-  { label: 'Int', detail: '整数类型', documentation: '32位有符号整数' },
-  { label: 'Float', detail: '浮点类型', documentation: '64位浮点数' },
-  { label: 'Str', detail: '字符串类型', documentation: 'UTF-8 字符串' },
-  { label: 'Bool', detail: '布尔类型', documentation: '布尔值 true 或 false' },
-  { label: 'Num', detail: '数字类型', documentation: '通用数字类型' },
-  { label: 'Byte', detail: '字节类型', documentation: '8位无符号整数' },
-  { label: 'Char', detail: '字符类型', documentation: 'Unicode 字符' },
-  { label: 'Void', detail: '空类型', documentation: '无返回值' },
-  { label: 'Nul', detail: '空值类型', documentation: '空值类型' },
-  { label: 'Any', detail: '任意类型', documentation: '任意类型，跳过类型检查' },
-];
+// Get keyword completions with i18n support
+function getKeywordCompletions(): { label: string; detail: string; documentation: string; insertText?: string }[] {
+  const msgs = i18nMessages.keywords;
+  return [
+    // Declaration keywords
+    { label: 'const', ...msgs.const, insertText: 'const ' },
+    { label: 'mut', ...msgs.mut, insertText: 'mut ' },
+    { label: 'fn', ...msgs.fn, insertText: 'fn ${1:name}(${2:params}): ${3:ReturnType} {\n\t$0\n}' },
+    { label: 'class', ...msgs.class, insertText: 'class ${1:Name} {\n\t$0\n}' },
+    { label: 'abstract', ...msgs.abstract, insertText: 'abstract class ${1:Name} {\n\t$0\n}' },
+    { label: 'enum', ...msgs.enum, insertText: 'enum ${1:Name} {\n\t$0\n}' },
+    { label: 'type', ...msgs.type, insertText: 'type ${1:Name} = $0' },
+    { label: 'interface', ...msgs.interface, insertText: 'interface ${1:Name} {\n\t$0\n}' },
+    // Control flow
+    { label: 'if', ...msgs.if, insertText: 'if (${1:condition}) {\n\t$0\n}' },
+    { label: 'else', ...msgs.else },
+    { label: 'for', ...msgs.for, insertText: 'for (${1:item} in ${2:iterable}) {\n\t$0\n}' },
+    { label: 'while', ...msgs.while, insertText: 'while (${1:condition}) {\n\t$0\n}' },
+    { label: 'do', ...msgs.do, insertText: 'do {\n\t$0\n} while (${1:condition})' },
+    { label: 'when', ...msgs.when, insertText: 'when (${1:value}) {\n\t${2:pattern} => {\n\t\t$0\n\t}\n}' },
+    { label: 'break', ...msgs.break },
+    { label: 'continue', ...msgs.continue },
+    { label: 'return', ...msgs.return, insertText: 'return $0' },
+    // Exception handling
+    { label: 'try', ...msgs.try, insertText: 'try {\n\t$0\n} catch (${1:e}) {\n\t\n}' },
+    { label: 'catch', ...msgs.catch },
+    { label: 'finally', ...msgs.finally },
+    { label: 'throw', ...msgs.throw, insertText: 'throw $0' },
+    // Class related
+    { label: 'extends', ...msgs.extends },
+    { label: 'implements', ...msgs.implements },
+    { label: 'static', ...msgs.static },
+    { label: 'constructor', ...msgs.constructor, insertText: 'constructor(${1:params}) {\n\t$0\n}' },
+    { label: 'this', ...msgs.this },
+    { label: 'super', ...msgs.super },
+    { label: 'new', ...msgs.new, insertText: 'new ${1:ClassName}($0)' },
+    // Access modifiers
+    { label: 'public', ...msgs.public },
+    { label: 'private', ...msgs.private },
+    { label: 'protected', ...msgs.protected },
+    { label: 'readonly', ...msgs.readonly },
+    // Modules
+    { label: 'import', ...msgs.import, insertText: 'import { $1 }: "${2:module}"' },
+    { label: 'export', ...msgs.export, insertText: 'export ' },
+    { label: 'default', ...msgs.default },
+    { label: 'as', ...msgs.as },
+    // Type operations
+    { label: 'typeof', ...msgs.typeof },
+    { label: 'instanceof', ...msgs.instanceof },
+    { label: 'is', ...msgs.is },
+    { label: 'of', ...msgs.of },
+    // Async
+    { label: 'async', ...msgs.async },
+    { label: 'await', ...msgs.await },
+    { label: 'go', ...msgs.go },
+    { label: 'chan', ...msgs.chan },
+    { label: 'yield', ...msgs.yield },
+    // Resource management
+    { label: 'defer', ...msgs.defer },
+    { label: 'using', ...msgs.using },
+    // Memory management
+    { label: 'move', ...msgs.move },
+    { label: 'borrow', ...msgs.borrow },
+    // Other
+    { label: 'macro', ...msgs.macro },
+    { label: 'where', ...msgs.where },
+    { label: 'in', ...msgs.in },
+    { label: 'void', ...msgs.void },
+    { label: 'delete', ...msgs.delete },
+    // Literals
+    { label: 'true', ...msgs.true },
+    { label: 'false', ...msgs.false },
+    { label: 'nul', ...msgs.nul },
+    { label: 'null', ...msgs.null },
+  ];
+}
+
+// Get type completions with i18n support
+function getTypeCompletions(): { label: string; detail: string; documentation: string }[] {
+  const msgs = i18nMessages.types;
+  return [
+    { label: 'Int', ...msgs.Int },
+    { label: 'Float', ...msgs.Float },
+    { label: 'Str', ...msgs.Str },
+    { label: 'Bool', ...msgs.Bool },
+    { label: 'Num', ...msgs.Num },
+    { label: 'Byte', ...msgs.Byte },
+    { label: 'Char', ...msgs.Char },
+    { label: 'Void', ...msgs.Void },
+    { label: 'Nul', ...msgs.Nul },
+    { label: 'Any', ...msgs.Any },
+    // C++ style types
+    { label: 'int8', ...msgs.int8 },
+    { label: 'int16', ...msgs.int16 },
+    { label: 'int32', ...msgs.int32 },
+    { label: 'int64', ...msgs.int64 },
+    { label: 'uint8', ...msgs.uint8 },
+    { label: 'uint16', ...msgs.uint16 },
+    { label: 'uint32', ...msgs.uint32 },
+    { label: 'uint64', ...msgs.uint64 },
+  ];
+}
+
+// ljconfig schema property definition
+interface ConfigSchemaProperty {
+  label: string;
+  detail: string;
+  documentation: string;
+  type: 'string' | 'boolean' | 'object' | 'array' | 'enum';
+  enumValues?: string[];
+  children?: Record<string, ConfigSchemaProperty>;
+}
+
+// Get ljconfig schema with i18n support
+function getLjconfigSchema(): Record<string, ConfigSchemaProperty> {
+  const cfg = i18nMessages.config;
+  return {
+    compilerOptions: {
+      label: 'compilerOptions',
+      ...cfg.compilerOptions,
+      type: 'object',
+      children: {
+        outDir: { label: 'outDir', ...cfg.outDir, type: 'string' },
+        rootDir: { label: 'rootDir', ...cfg.rootDir, type: 'string' },
+        prelude: { label: 'prelude', ...cfg.prelude, type: 'enum', enumValues: ['none', 'core', 'full'] },
+        codegenTarget: { label: 'codegenTarget', ...cfg.codegenTarget, type: 'enum', enumValues: ['js', 'c'] },
+        strict: { label: 'strict', ...cfg.strict, type: 'boolean' },
+        sourceMap: { label: 'sourceMap', ...cfg.sourceMap, type: 'boolean' },
+        declaration: { label: 'declaration', ...cfg.declaration, type: 'boolean' },
+        noImplicitAny: { label: 'noImplicitAny', ...cfg.noImplicitAny, type: 'boolean' }
+      }
+    },
+    buildOptions: {
+      label: 'buildOptions',
+      ...cfg.buildOptions,
+      type: 'object',
+      children: {
+        target: { label: 'target', ...cfg.target, type: 'enum', enumValues: ['node', 'browser', 'llvm', 'gcc'] },
+        executableName: { label: 'executableName', ...cfg.executableName, type: 'string' },
+        llvmOptions: {
+          label: 'llvmOptions',
+          ...cfg.llvmOptions,
+          type: 'object',
+          children: {
+            optLevel: { label: 'optLevel', ...cfg.optLevel, type: 'enum', enumValues: ['0', '1', '2', '3', 's', 'z'] },
+            keepIntermediates: { label: 'keepIntermediates', ...cfg.keepIntermediates, type: 'boolean' },
+            targetTriple: { label: 'targetTriple', ...cfg.targetTriple, type: 'string' }
+          }
+        },
+        gccOptions: {
+          label: 'gccOptions',
+          ...cfg.gccOptions,
+          type: 'object',
+          children: {
+            optLevel: { label: 'optLevel', ...cfg.optLevel, type: 'enum', enumValues: ['0', '1', '2', '3', 's'] },
+            keepIntermediates: { label: 'keepIntermediates', ...cfg.keepIntermediates, type: 'boolean' }
+          }
+        }
+      }
+    },
+    include: { label: 'include', ...cfg.include, type: 'array' },
+    exclude: { label: 'exclude', ...cfg.exclude, type: 'array' },
+    extends: { label: 'extends', ...cfg.extends, type: 'string' }
+  };
+}
+
+// 检查文件是否是 ljconfig 配置文件
+function isLjConfigFile(document: vscode.TextDocument): boolean {
+  const fileName = document.fileName;
+  const baseName = fileName.split(/[\\/]/).pop() || '';
+  
+  // 检查文件名模式: ljconfig.*.json 或 ljconfig.*.lj 或 ljconfig.json 或 ljconfig.lj
+  const isConfigFileName = /^ljconfig(\.[^.]+)?\.(json|lj)$/.test(baseName);
+  if (!isConfigFileName) return false;
+  
+  // 如果是 .lj 文件，检查第一行是否有 #/ljos/:package:config
+  if (baseName.endsWith('.lj')) {
+    const firstLine = document.lineAt(0).text.trim();
+    if (firstLine !== '#/ljos/:package:config') return false;
+    
+    // 检查是否导入了 /std/config
+    const text = document.getText();
+    if (!text.includes('/std/config')) return false;
+  }
+  
+  return true;
+}
+
+// 获取当前光标在配置对象中的路径
+function getConfigPath(document: vscode.TextDocument, position: vscode.Position): string[] {
+  const text = document.getText();
+  const offset = document.offsetAt(position);
+  
+  // 简单的路径解析：查找光标前的属性名
+  const path: string[] = [];
+  let depth = 0;
+  let currentKey = '';
+  let inString = false;
+  let stringChar = '';
+  
+  for (let i = 0; i < offset; i++) {
+    const char = text[i];
+    
+    if (inString) {
+      if (char === stringChar && text[i - 1] !== '\\') {
+        inString = false;
+      }
+      continue;
+    }
+    
+    if (char === '"' || char === "'") {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+    
+    if (char === '{') {
+      if (currentKey) {
+        path.push(currentKey);
+        currentKey = '';
+      }
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (path.length > 0) path.pop();
+    } else if (char === ':' && depth > 0) {
+      // 找到键值对的冒号，记录当前键
+      const beforeColon = text.substring(0, i).trim();
+      const keyMatch = beforeColon.match(/([a-zA-Z_][a-zA-Z0-9_]*)\s*$/);
+      if (keyMatch) {
+        currentKey = keyMatch[1];
+      }
+    } else if (char === ',' || char === '\n') {
+      currentKey = '';
+    }
+  }
+  
+  return path;
+}
+
+// Get config completions with i18n support
+function getConfigCompletions(path: string[]): vscode.CompletionItem[] {
+  const completions: vscode.CompletionItem[] = [];
+  
+  let schema: Record<string, ConfigSchemaProperty> = getLjconfigSchema();
+  
+  // 根据路径导航到正确的 schema 位置
+  for (const key of path) {
+    const prop = schema[key];
+    if (prop && prop.children) {
+      schema = prop.children;
+    } else {
+      return completions; // 路径无效
+    }
+  }
+  
+  // 生成补全项
+  for (const [key, prop] of Object.entries(schema)) {
+    const item = new vscode.CompletionItem(key, vscode.CompletionItemKind.Property);
+    item.detail = prop.detail;
+    item.documentation = new vscode.MarkdownString(prop.documentation);
+    
+    // 根据类型生成插入文本
+    if (prop.type === 'object') {
+      item.insertText = new vscode.SnippetString(`${key}: {\n\t$0\n}`);
+    } else if (prop.type === 'array') {
+      item.insertText = new vscode.SnippetString(`${key}: [$0]`);
+    } else if (prop.type === 'boolean') {
+      item.insertText = new vscode.SnippetString(`${key}: \${1|true,false|}`);
+    } else if (prop.type === 'enum' && prop.enumValues) {
+      const choices = prop.enumValues.map(v => `"${v}"`).join(',');
+      item.insertText = new vscode.SnippetString(`${key}: \${1|${choices}|}`);
+    } else {
+      item.insertText = new vscode.SnippetString(`${key}: "$0"`);
+    }
+    
+    completions.push(item);
+  }
+  
+  return completions;
+}
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 const checkerCache = new Map<string, SyntaxChecker>();
@@ -114,6 +301,10 @@ function getChecker(uri: string): SyntaxChecker {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Initialize i18n
+  initI18n();
+  i18nMessages = getMessages();
+  
   // Create diagnostic collection
   diagnosticCollection = vscode.languages.createDiagnosticCollection('ljos');
   context.subscriptions.push(diagnosticCollection);
@@ -188,16 +379,65 @@ export function activate(context: vscode.ExtensionContext) {
       provideCompletionItems(document, position, token, context) {
         const completions: vscode.CompletionItem[] = [];
         
+        // Check if this is a ljconfig file - provide config-specific completions
+        if (isLjConfigFile(document)) {
+          const configPath = getConfigPath(document, position);
+          return getConfigCompletions(configPath);
+        }
+        
         // Get the text before cursor to determine context
         const lineText = document.lineAt(position.line).text;
         const textBeforeCursor = lineText.substring(0, position.character);
+        
+        // Check if we're after a dot (member access context)
+        const dotMatch = textBeforeCursor.match(/(\w+)\.\s*(\w*)$/);
+        if (dotMatch) {
+          const objectName = dotMatch[1];
+          const checker = getChecker(document.uri.toString());
+          const symbols = checker.getSymbols?.() || [];
+          
+          // Find the symbol
+          const sym = symbols.find(s => s.name === objectName);
+          if (sym) {
+            // Check if it's an enum - provide enum member completions
+            if (sym.type.kind === 'enum') {
+              const enumType = sym.type as any;
+              for (const [memberName, memberInfo] of enumType.members) {
+                const item = new vscode.CompletionItem(memberName, vscode.CompletionItemKind.EnumMember);
+                if (memberInfo.isCallable && memberInfo.associatedData) {
+                  item.detail = `${objectName}.${memberName}(...)`;
+                  item.insertText = new vscode.SnippetString(`${memberName}($0)`);
+                } else {
+                  item.detail = `${objectName}.${memberName}`;
+                }
+                item.sortText = `a_${memberName}`;
+                completions.push(item);
+              }
+              return completions;
+            }
+            
+            // Check if it's a class - provide class member completions
+            if (sym.type.kind === 'class') {
+              const classType = sym.type as any;
+              for (const [memberName, memberInfo] of classType.members) {
+                const kind = memberInfo.isMethod 
+                  ? vscode.CompletionItemKind.Method 
+                  : vscode.CompletionItemKind.Property;
+                const item = new vscode.CompletionItem(memberName, kind);
+                item.sortText = `a_${memberName}`;
+                completions.push(item);
+              }
+              return completions;
+            }
+          }
+        }
         
         // Check if we're after a colon (type annotation context)
         const isTypeContext = /:\s*\w*$/.test(textBeforeCursor) || 
                              /\)\s*:\s*\w*$/.test(textBeforeCursor);
         
-        // Add keyword completions
-        for (const kw of KEYWORD_COMPLETIONS) {
+        // Add keyword completions (with i18n)
+        for (const kw of getKeywordCompletions()) {
           const item = new vscode.CompletionItem(kw.label, vscode.CompletionItemKind.Keyword);
           item.detail = kw.detail;
           item.documentation = new vscode.MarkdownString(kw.documentation);
@@ -209,8 +449,8 @@ export function activate(context: vscode.ExtensionContext) {
           completions.push(item);
         }
         
-        // Add type completions (higher priority in type context)
-        for (const type of TYPE_COMPLETIONS) {
+        // Add type completions (higher priority in type context, with i18n)
+        for (const type of getTypeCompletions()) {
           const item = new vscode.CompletionItem(type.label, vscode.CompletionItemKind.TypeParameter);
           item.detail = type.detail;
           item.documentation = new vscode.MarkdownString(type.documentation);

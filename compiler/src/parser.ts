@@ -332,11 +332,24 @@ export class Parser {
     const name = this.consume(TokenType.IDENTIFIER, 'Expected enum name').value;
 
     this.consume(TokenType.LBRACE, "Expected '{' after enum name");
-    const members: { name: string }[] = [];
+    const members: AST.EnumMember[] = [];
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       const memberName = this.consume(TokenType.IDENTIFIER, 'Expected enum member name').value;
-      members.push({ name: memberName });
+      const member: AST.EnumMember = { name: memberName };
+
+      // 检查关联数据: Some(value: Int)
+      if (this.match(TokenType.LPAREN)) {
+        member.associatedData = this.parameterList();
+        this.consume(TokenType.RPAREN, "Expected ')' after associated data");
+      }
+
+      // 检查显式值: A = 1
+      if (this.match(TokenType.ASSIGN)) {
+        member.value = this.conditionalExpression();
+      }
+
+      members.push(member);
 
       if (!this.match(TokenType.COMMA)) {
         break;
@@ -437,43 +450,133 @@ export class Parser {
   private ifStatement(): AST.IfStatement {
     this.advance(); // consume 'if'
     this.consume(TokenType.LPAREN, "Expected '('");
-    const condition = this.expression();
+    
+    // 解析多条件语法: if (条件1, 条件2; 条件3) 等价于 (条件1 && 条件2) || 条件3
+    const condition = this.parseIfCondition();
     this.consume(TokenType.RPAREN, "Expected ')'");
     
     const consequent = this.blockStatement();
     
     let alternate: AST.IfStatement | AST.BlockStatement | undefined;
     if (this.match(TokenType.ELSE)) {
-      if (this.check(TokenType.LPAREN)) {
-        // else (condition) { ... } - treated as else if
-        this.consume(TokenType.LPAREN, "Expected '('");
-        const elseCondition = this.expression();
-        this.consume(TokenType.RPAREN, "Expected ')'");
-        const elseConsequent = this.blockStatement();
-        
-        let elseAlternate: AST.IfStatement | AST.BlockStatement | undefined;
-        if (this.match(TokenType.ELSE)) {
-          if (this.check(TokenType.LPAREN)) {
-            elseAlternate = this.ifStatement();
-          } else {
-            elseAlternate = this.blockStatement();
-          }
-        }
-        
-        alternate = {
-          type: 'IfStatement',
-          condition: elseCondition,
-          consequent: elseConsequent,
-          alternate: elseAlternate
-        };
-      } else if (this.check(TokenType.IF)) {
-        alternate = this.ifStatement();
-      } else {
-        alternate = this.blockStatement();
-      }
+      alternate = this.parseElseBranch();
     }
 
     return { type: 'IfStatement', condition, consequent, alternate };
+  }
+
+  /**
+   * 解析 if 条件，支持多条件语法:
+   * - 逗号分隔的条件用 && 连接
+   * - 分号分隔的条件用 || 连接
+   * 例如: (a, b; c) 等价于 (a && b) || c
+   */
+  private parseIfCondition(): AST.Expression {
+    const orGroups: AST.Expression[] = [];
+    
+    // 解析第一组 && 条件
+    orGroups.push(this.parseAndConditions());
+    
+    // 检查是否有分号分隔的 || 条件
+    while (this.match(TokenType.SEMICOLON)) {
+      orGroups.push(this.parseAndConditions());
+    }
+    
+    // 如果只有一组，直接返回
+    if (orGroups.length === 1) {
+      return orGroups[0];
+    }
+    
+    // 用 || 连接多组
+    let result = orGroups[0];
+    for (let i = 1; i < orGroups.length; i++) {
+      result = {
+        type: 'LogicalExpression',
+        operator: '||',
+        left: result,
+        right: orGroups[i]
+      };
+    }
+    return result;
+  }
+
+  /**
+   * 解析逗号分隔的 && 条件
+   */
+  private parseAndConditions(): AST.Expression {
+    const conditions: AST.Expression[] = [];
+    
+    // 解析第一个条件
+    conditions.push(this.conditionalExpression());
+    
+    // 检查是否有逗号分隔的 && 条件
+    while (this.check(TokenType.COMMA) && !this.checkAhead(TokenType.RPAREN, 1)) {
+      // 确保不是在右括号前的逗号（那可能是其他语法）
+      if (this.checkAhead(TokenType.SEMICOLON, 1) || this.checkAhead(TokenType.RPAREN, 1)) {
+        break;
+      }
+      this.advance(); // consume comma
+      conditions.push(this.conditionalExpression());
+    }
+    
+    // 如果只有一个条件，直接返回
+    if (conditions.length === 1) {
+      return conditions[0];
+    }
+    
+    // 用 && 连接多个条件
+    let result = conditions[0];
+    for (let i = 1; i < conditions.length; i++) {
+      result = {
+        type: 'LogicalExpression',
+        operator: '&&',
+        left: result,
+        right: conditions[i]
+      };
+    }
+    return result;
+  }
+
+  /**
+   * 检查当前位置后第 n 个 token 是否是指定类型
+   */
+  private checkAhead(type: TokenType, n: number): boolean {
+    if (this.current + n >= this.tokens.length) return false;
+    return this.tokens[this.current + n].type === type;
+  }
+
+  /**
+   * 解析 else 分支，支持:
+   * - else { ... }
+   * - else if (...) { ... }
+   * - else (...) { ... }  (等价于 else if)
+   */
+  private parseElseBranch(): AST.IfStatement | AST.BlockStatement {
+    if (this.check(TokenType.IF)) {
+      // else if
+      return this.ifStatement();
+    } else if (this.check(TokenType.LPAREN)) {
+      // else (condition) { ... } - 等价于 else if
+      this.consume(TokenType.LPAREN, "Expected '('");
+      const elseCondition = this.parseIfCondition();
+      this.consume(TokenType.RPAREN, "Expected ')'");
+      const elseConsequent = this.blockStatement();
+      
+      let elseAlternate: AST.IfStatement | AST.BlockStatement | undefined;
+      if (this.match(TokenType.ELSE)) {
+        elseAlternate = this.parseElseBranch();
+      }
+      
+      return {
+        type: 'IfStatement',
+        condition: elseCondition,
+        consequent: elseConsequent,
+        alternate: elseAlternate
+      };
+    } else {
+      // else { ... }
+      return this.blockStatement();
+    }
   }
 
   private whileStatement(): AST.WhileStatement {
@@ -668,7 +771,8 @@ export class Parser {
     }
 
     // Literal or identifier pattern with possible type check
-    const expr = this.primary();
+    // Use call() to support member expressions (Enum.Variant) and calls (Enum.Variant(val))
+    const expr = this.call();
     
     // Type pattern: n is int
     if (this.match(TokenType.IS)) {
@@ -694,6 +798,11 @@ export class Parser {
       return { type: 'IdentifierPattern', name: expr.name };
     }
     if (expr.type === 'Literal') {
+      return { type: 'LiteralPattern', value: expr };
+    }
+    if (expr.type === 'MemberExpression' || expr.type === 'CallExpression') {
+      // Treat member access and calls as literal patterns (values to match against)
+      // For CallExpression it might be an Enum extractor pattern, currently treated as literal value
       return { type: 'LiteralPattern', value: expr };
     }
     throw new ParserError('Invalid pattern', this.peek());
@@ -830,18 +939,11 @@ export class Parser {
     if (this.check(TokenType.IF)) {
       return this.ifExpression();
     }
+    // Handle when expression: when (cond) { ... }
+    if (this.check(TokenType.WHEN)) {
+      return this.whenExpression();
+    }
     return this.logicalOr();
-  }
-
-  private ifExpression(): AST.Expression {
-    this.advance(); // consume 'if'
-    this.consume(TokenType.LPAREN, "Expected '('");
-    const test = this.expression();
-    this.consume(TokenType.RPAREN, "Expected ')'");
-    const consequent = this.expression();
-    this.consume(TokenType.ELSE, "Expected 'else'");
-    const alternate = this.expression();
-    return { type: 'ConditionalExpression', test, consequent, alternate };
   }
 
   // Parse expression without treating comma/semicolon as logical operators
@@ -871,11 +973,11 @@ export class Parser {
     return this.logicalOrBase();
   }
 
-  // Base logical or - only uses | (pipe) not semicolon
+  // Base logical or - only uses | (pipe) or || (or) not semicolon
   private logicalOrBase(): AST.Expression {
     let expr = this.logicalAndBase();
 
-    while (this.match(TokenType.PIPE)) {
+    while (this.match(TokenType.PIPE, TokenType.OR)) {
       const right = this.logicalAndBase();
       expr = { type: 'LogicalExpression', operator: '||', left: expr, right };
     }
@@ -883,11 +985,11 @@ export class Parser {
     return expr;
   }
 
-  // Base logical and - only uses & (amp) not comma
+  // Base logical and - only uses & (amp) or && (and) not comma
   private logicalAndBase(): AST.Expression {
     let expr = this.equality();
 
-    while (this.match(TokenType.AMP)) {
+    while (this.match(TokenType.AMP, TokenType.AND)) {
       const right = this.equality();
       expr = { type: 'LogicalExpression', operator: '&&', left: expr, right };
     }
@@ -898,7 +1000,7 @@ export class Parser {
   private logicalOr(): AST.Expression {
     let expr = this.logicalAnd();
 
-    while (this.match(TokenType.PIPE) || this.match(TokenType.SEMICOLON)) {
+    while (this.match(TokenType.PIPE, TokenType.OR, TokenType.SEMICOLON)) {
       const right = this.logicalAnd();
       expr = { type: 'LogicalExpression', operator: '||', left: expr, right };
     }
@@ -909,7 +1011,7 @@ export class Parser {
   private logicalAnd(): AST.Expression {
     let expr = this.equality();
 
-    while (this.match(TokenType.AMP) || this.match(TokenType.COMMA)) {
+    while (this.match(TokenType.AMP, TokenType.AND, TokenType.COMMA)) {
       const right = this.equality();
       expr = { type: 'LogicalExpression', operator: '&&', left: expr, right };
     }
@@ -1115,18 +1217,29 @@ export class Parser {
       }
       return { type: 'Literal', value, raw };
     }
-    if (this.match(TokenType.STRING, TokenType.RAW_STRING)) {
+    // Regular string "" - no template interpolation
+    if (this.match(TokenType.STRING)) {
       const value = this.previous().value;
-      // Check for template string interpolation
+      return { type: 'Literal', value, raw: JSON.stringify(value) };
+    }
+    // Template string @"" or `` - supports ${} interpolation
+    if (this.match(TokenType.TEMPLATE_STRING, TokenType.RAW_STRING)) {
+      const value = this.previous().value;
       if (value.includes('${')) {
         return this.parseTemplateString(value);
       }
       return { type: 'Literal', value, raw: JSON.stringify(value) };
     }
+    // Character literal 'c'
+    if (this.match(TokenType.CHAR)) {
+      const value = this.previous().value;
+      return { type: 'CharLiteral', value, raw: `'${value}'` };
+    }
 
     // Identifier
     if (this.match(TokenType.IDENTIFIER)) {
-      return { type: 'Identifier', name: this.previous().value };
+      const token = this.previous();
+      return { type: 'Identifier', name: token.value, line: token.line, column: token.column };
     }
 
     // Grouping or arrow function
@@ -1218,7 +1331,102 @@ export class Parser {
       return { type: 'ReceiveExpression', channel };
     }
 
+    // If expression: if (cond) expr else expr
+    if (this.check(TokenType.IF)) {
+      return this.ifExpression();
+    }
+
     throw new ParserError(`Unexpected token: ${this.peek().value}`, this.peek());
+  }
+
+  /**
+   * 解析 if 表达式: if (condition) consequent else alternate
+   * 例如: const result = if (a > b) a else b
+   */
+  private ifExpression(): AST.IfExpression {
+    this.advance(); // consume 'if'
+    this.consume(TokenType.LPAREN, "Expected '(' after 'if'");
+    const condition = this.parseIfCondition();
+    this.consume(TokenType.RPAREN, "Expected ')' after condition");
+    
+    // consequent 可以是表达式或块语句
+    let consequent: AST.Expression;
+    if (this.check(TokenType.LBRACE)) {
+      // 块语句形式，需要提取最后一个表达式作为值
+      const block = this.blockStatement();
+      // 将块语句包装成一个 IIFE 表达式
+      consequent = this.blockToExpression(block);
+    } else {
+      consequent = this.conditionalExpression();
+    }
+    
+    this.consume(TokenType.ELSE, "Expected 'else' in if expression");
+    
+    // alternate 可以是另一个 if 表达式、表达式或块语句
+    let alternate: AST.Expression;
+    if (this.check(TokenType.IF)) {
+      alternate = this.ifExpression();
+    } else if (this.check(TokenType.LPAREN)) {
+      // else (condition) 形式
+      this.consume(TokenType.LPAREN, "Expected '('");
+      const elseCondition = this.parseIfCondition();
+      this.consume(TokenType.RPAREN, "Expected ')'");
+      
+      let elseConsequent: AST.Expression;
+      if (this.check(TokenType.LBRACE)) {
+        elseConsequent = this.blockToExpression(this.blockStatement());
+      } else {
+        elseConsequent = this.conditionalExpression();
+      }
+      
+      this.consume(TokenType.ELSE, "Expected 'else' after else-if branch");
+      
+      let elseAlternate: AST.Expression;
+      if (this.check(TokenType.IF)) {
+        elseAlternate = this.ifExpression();
+      } else if (this.check(TokenType.LBRACE)) {
+        elseAlternate = this.blockToExpression(this.blockStatement());
+      } else {
+        elseAlternate = this.conditionalExpression();
+      }
+      
+      alternate = {
+        type: 'IfExpression',
+        condition: elseCondition,
+        consequent: elseConsequent,
+        alternate: elseAlternate
+      };
+    } else if (this.check(TokenType.LBRACE)) {
+      alternate = this.blockToExpression(this.blockStatement());
+    } else {
+      alternate = this.conditionalExpression();
+    }
+    
+    return { type: 'IfExpression', condition, consequent, alternate };
+  }
+
+  /**
+   * 将块语句转换为表达式（用于 if 表达式）
+   * 生成一个立即调用的箭头函数
+   */
+  private blockToExpression(block: AST.BlockStatement): AST.Expression {
+    // 如果块只有一个表达式语句，直接返回该表达式
+    if (block.body.length === 1 && block.body[0].type === 'ExpressionStatement') {
+      return block.body[0].expression;
+    }
+    
+    // 否则包装成 IIFE: (() => { ... })()
+    const arrow: AST.ArrowFunctionExpression = {
+      type: 'ArrowFunctionExpression',
+      params: [],
+      body: block
+    };
+    
+    return {
+      type: 'CallExpression',
+      callee: arrow,
+      arguments: []
+    };
   }
 
   private parseTemplateString(value: string): AST.TemplateStringExpression {
@@ -1400,6 +1608,12 @@ export class Parser {
 
     // Array type: [T] or [T; N]
     if (this.match(TokenType.LBRACKET)) {
+      if (this.check(TokenType.RBRACKET)) {
+        this.advance(); // consume ']'
+        // Handle empty array type [] as [Any]
+        return { kind: 'array', elementType: { kind: 'simple', name: 'Any' } };
+      }
+
       const elementType = this.typeAnnotation();
       let size: number | undefined;
       if (this.match(TokenType.SEMICOLON)) {

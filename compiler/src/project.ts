@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync, spawn } from 'node:child_process';
+import chalk from 'chalk';
 import { Compiler, CompileResult, CompilerError } from './compiler';
 import { LjosConfig, CompilerOptions, BuildOptions, loadConfig, getProjectRoot, findConfigFile } from './config';
 
@@ -151,7 +152,9 @@ export interface ProjectCompileResult {
     errors: CompilerError[];
   }>;
   outputFiles: string[];
-  duration: number;
+  duration: number;           // Total duration (ljc + third-party)
+  ljcDuration: number;        // ljc compilation time only
+  thirdPartyDuration: number; // Third-party tools time (pkg/gcc/esbuild)
 }
 
 // ============ Project Compiler ============
@@ -193,6 +196,8 @@ export class ProjectCompiler {
       errors: [],
       outputFiles: [],
       duration: 0,
+      ljcDuration: 0,
+      thirdPartyDuration: 0,
     };
 
     // Get files to compile
@@ -228,7 +233,7 @@ export class ProjectCompiler {
       if (compileResult.success) {
         result.filesCompiled++;
         result.outputFiles.push(outputPath);
-        console.log(`  ✓ ${file}`);
+        console.log(`  ${chalk.green('✓')} ${file}`);
       } else {
         result.filesFailed++;
         result.success = false;
@@ -236,10 +241,37 @@ export class ProjectCompiler {
           file: inputPath,
           errors: compileResult.errors,
         });
-        console.log(`  ✗ ${file}`);
+        console.log(`  ${chalk.red('✗')} ${file}`);
+        
+        // Read source for error highlighting
+        let source: string | undefined;
+        try {
+          source = fs.readFileSync(inputPath, 'utf-8');
+        } catch {
+          // Ignore read errors
+        }
+        const lines = source?.split('\n');
+        
         for (const error of compileResult.errors) {
           if (error.line > 0) {
-            console.log(`    ${error.line}:${error.column} - ${error.message}`);
+            const location = chalk.cyan(`${error.line}:${error.column}`);
+            console.log(`    ${location} - ${error.message}`);
+            
+            // Show error line with highlighting
+            if (lines && error.line <= lines.length) {
+              const errorLine = lines[error.line - 1];
+              if (errorLine) {
+                const col = error.column - 1;
+                const before = errorLine.substring(0, col);
+                let endCol = col;
+                while (endCol < errorLine.length && !/\s/.test(errorLine[endCol])) {
+                  endCol++;
+                }
+                const errorPart = errorLine.substring(col, endCol) || errorLine.substring(col, col + 1);
+                const after = errorLine.substring(endCol);
+                console.log(`    ${chalk.gray(`${error.line} |`)} ${before}${chalk.red.bold(errorPart)}${after}`);
+              }
+            }
           } else {
             console.log(`    ${error.message}`);
           }
@@ -253,7 +285,8 @@ export class ProjectCompiler {
     }
     // C++ target generates native code, no runtime needed
 
-    result.duration = Date.now() - startTime;
+    result.ljcDuration = Date.now() - startTime;
+    result.duration = result.ljcDuration;
     return result;
   }
 
@@ -447,8 +480,10 @@ export class ProjectCompiler {
       return compileResult;
     }
     
-    // Check build target
+    // Check build target - track third-party tool time
     const buildOptions = this.config.buildOptions;
+    const thirdPartyStart = Date.now();
+    
     if (buildOptions?.target === 'pkg') {
       console.log('\nPackaging with pkg...');
       this.packageWithPkg(buildOptions);
@@ -459,6 +494,10 @@ export class ProjectCompiler {
       console.log('\nPackaging with GCC...');
       this.packageWithGcc(buildOptions, compileResult.outputFiles);
     }
+    
+    // Calculate third-party duration
+    compileResult.thirdPartyDuration = Date.now() - thirdPartyStart;
+    compileResult.duration = compileResult.ljcDuration + compileResult.thirdPartyDuration;
     
     return compileResult;
   }

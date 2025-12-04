@@ -2,8 +2,10 @@
 export enum TokenType {
   // Literals
   NUMBER = 'NUMBER',
-  STRING = 'STRING',
-  RAW_STRING = 'RAW_STRING',
+  STRING = 'STRING',           // Regular string "" - no template interpolation
+  TEMPLATE_STRING = 'TEMPLATE_STRING',  // Template string @"" or `` - supports ${} interpolation
+  RAW_STRING = 'RAW_STRING',   // Deprecated, kept for compatibility
+  CHAR = 'CHAR',               // Character literal 'c'
   IDENTIFIER = 'IDENTIFIER',
 
   // Keywords
@@ -112,6 +114,8 @@ export enum TokenType {
   BANG = 'BANG',
   AMP = 'AMP',
   PIPE = 'PIPE',
+  AND = 'AND',       // &&
+  OR = 'OR',         // ||
 
   COMMA = 'COMMA',
   SEMICOLON = 'SEMICOLON',

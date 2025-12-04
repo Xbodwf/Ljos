@@ -1,3 +1,5 @@
+![Ljos](https://socialify.git.ci/Xbodwf/Ljos/image?custom_description=A+programming+language&description=1&font=JetBrains+Mono&forks=1&issues=1&language=1&name=1&pulls=1&stargazers=1&theme=Auto)
+
 # Ljos
 
 

@@ -1,4 +1,4 @@
-import { Program, Statement, Expression, Identifier, VariableDeclaration, FunctionDeclaration, ClassDeclaration, EnumDeclaration, TypeAnnotation, MemberExpression, WhileStatement, DoWhileStatement, TypeofExpression, InstanceofExpression, VoidExpression, DeleteExpression, ThisExpression, SuperExpression, YieldExpression } from './ast';
+import { Program, Statement, Expression, Identifier, VariableDeclaration, FunctionDeclaration, ClassDeclaration, EnumDeclaration, EnumMember, TypeAnnotation, MemberExpression, WhileStatement, DoWhileStatement, TypeofExpression, InstanceofExpression, VoidExpression, DeleteExpression, ThisExpression, SuperExpression, YieldExpression, Parameter, IfExpression } from './ast';
 import { CompilerError } from './compiler';
 
 // Type information
@@ -7,8 +7,17 @@ type TypeInfo =
   | { kind: 'class'; name: string; members: Map<string, MemberInfo> }
   | { kind: 'function'; params: TypeInfo[]; returnType: TypeInfo }
   | { kind: 'array'; elementType: TypeInfo }
+  | { kind: 'enum'; name: string; members: Map<string, EnumMemberInfo> }
+  | { kind: 'enumMember'; enumName: string; memberName: string; valueType?: TypeInfo; associatedData?: TypeInfo[] }
   | { kind: 'unknown' }
   | { kind: 'void' };
+
+interface EnumMemberInfo {
+  name: string;
+  valueType?: TypeInfo;           // 显式值的类型
+  associatedData?: TypeInfo[];    // 关联数据的类型列表
+  isCallable: boolean;            // 是否有关联数据（可调用）
+}
 
 interface MemberInfo {
   type: TypeInfo;
@@ -28,33 +37,60 @@ interface Scope {
 // 隐式类型转换规则：定义哪些类型可以隐式转换为其他类型
 const IMPLICIT_CONVERSIONS: Map<string, Set<string>> = new Map([
   // 数值类型转换
-  ['Int', new Set(['Float', 'Num'])],      // Int -> Float, Int -> Num
-  ['Float', new Set(['Num'])],              // Float -> Num
-  ['Byte', new Set(['Int', 'Float', 'Num'])], // Byte -> Int -> Float -> Num
-  // 字符串转换
-  ['Char', new Set(['Str'])],               // Char -> Str
+  ['Int', new Set(['Float', 'Num', 'long', 'long long'])],      // Int -> Float, Int -> Num
+  ['Float', new Set(['Num', 'double'])],              // Float -> Num
+  ['Byte', new Set(['Int', 'Float', 'Num', 'short', 'int'])], // Byte -> Int -> Float -> Num
+  // 字符类型转换
+  ['Char', new Set(['Str', 'Int'])],               // Char -> Str, Char -> Int
+  // C++ 风格整数类型隐式转换
+  ['int8', new Set(['int16', 'int32', 'int64', 'Int', 'Float'])],
+  ['int16', new Set(['int32', 'int64', 'Int', 'Float'])],
+  ['int32', new Set(['int64', 'Int', 'Float'])],
+  ['uint8', new Set(['uint16', 'uint32', 'uint64', 'int16', 'int32', 'int64', 'Int', 'Float'])],
+  ['uint16', new Set(['uint32', 'uint64', 'int32', 'int64', 'Int', 'Float'])],
+  ['uint32', new Set(['uint64', 'int64', 'Float'])],
+  ['short', new Set(['int', 'long', 'long long', 'Int', 'Float'])],
+  ['unsigned char', new Set(['unsigned short', 'unsigned int', 'unsigned long', 'short', 'int', 'Int'])],
+  ['unsigned short', new Set(['unsigned int', 'unsigned long', 'int', 'long', 'Int'])],
+  ['float', new Set(['double', 'Float'])],
 ]);
 
 // 显式类型转换规则：定义哪些类型可以显式转换
 const EXPLICIT_CONVERSIONS: Map<string, Set<string>> = new Map([
   // 数值类型之间可以显式转换
-  ['Int', new Set(['Float', 'Num', 'Byte', 'Str', 'Bool'])],
-  ['Float', new Set(['Int', 'Num', 'Byte', 'Str'])],
+  ['Int', new Set(['Float', 'Num', 'Byte', 'Str', 'Bool', 'Char', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64'])],
+  ['Float', new Set(['Int', 'Num', 'Byte', 'Str', 'int32', 'int64', 'float', 'double'])],
   ['Num', new Set(['Int', 'Float', 'Byte', 'Str'])],
-  ['Byte', new Set(['Int', 'Float', 'Num', 'Str'])],
+  ['Byte', new Set(['Int', 'Float', 'Num', 'Str', 'Char', 'uint8', 'int8'])],
+  // 字符类型转换
+  ['Char', new Set(['Int', 'Byte', 'Str', 'int8', 'uint8', 'unsigned char'])],
   // 字符串转换
   ['Str', new Set(['Int', 'Float', 'Num', 'Bool'])],
   // 布尔转换
   ['Bool', new Set(['Int', 'Str'])],
+  // C++ 风格类型显式转换
+  ['int8', new Set(['int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'Int', 'Byte', 'Char'])],
+  ['int16', new Set(['int8', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'Int', 'Byte'])],
+  ['int32', new Set(['int8', 'int16', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'Int', 'Byte'])],
+  ['int64', new Set(['int8', 'int16', 'int32', 'uint8', 'uint16', 'uint32', 'uint64', 'Int', 'Byte'])],
+  ['uint8', new Set(['int8', 'int16', 'int32', 'int64', 'uint16', 'uint32', 'uint64', 'Int', 'Byte', 'Char'])],
+  ['uint16', new Set(['int8', 'int16', 'int32', 'int64', 'uint8', 'uint32', 'uint64', 'Int', 'Byte'])],
+  ['uint32', new Set(['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint64', 'Int', 'Byte'])],
+  ['uint64', new Set(['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'Int', 'Byte'])],
+  ['float', new Set(['double', 'Float', 'Int', 'int32', 'int64'])],
+  ['double', new Set(['float', 'Float', 'Int', 'int32', 'int64'])],
+  ['unsigned char', new Set(['char', 'Char', 'Byte', 'int8', 'uint8'])],
 ]);
 
 export class TypeChecker {
   private classTypes: Map<string, TypeInfo> = new Map();
+  private enumTypes: Map<string, TypeInfo> = new Map();
   private currentClass: TypeInfo | null = null;
   private currentFunctionReturnType: TypeInfo | null = null;
 
   check(program: Program, filename: string | undefined, errors: CompilerError[]): void {
     this.classTypes.clear();
+    this.enumTypes.clear();
     const globalScope: Scope = { symbols: new Map() };
 
     // Built-in functions
@@ -73,6 +109,15 @@ export class TypeChecker {
       }
     }
 
+    // Collect all enum definitions
+    for (const stmt of program.body) {
+      if (stmt.type === 'EnumDeclaration') {
+        const enumType = this.collectEnumType(stmt);
+        this.enumTypes.set(stmt.name, enumType);
+        globalScope.symbols.set(stmt.name, { type: enumType });
+      }
+    }
+
     // Second pass: collect other top-level declarations
     for (const stmt of program.body) {
       switch (stmt.type) {
@@ -81,9 +126,6 @@ export class TypeChecker {
           break;
         case 'FunctionDeclaration':
           globalScope.symbols.set(stmt.name, { type: this.resolveFunctionType(stmt) });
-          break;
-        case 'EnumDeclaration':
-          globalScope.symbols.set(stmt.name, { type: { kind: 'unknown' } });
           break;
         case 'TypeAliasDeclaration':
           globalScope.symbols.set(stmt.name, { type: { kind: 'unknown' } });
@@ -101,6 +143,46 @@ export class TypeChecker {
     for (const stmt of program.body) {
       this.checkStatement(stmt, globalScope, filename, errors);
     }
+  }
+
+  /**
+   * 收集 enum 类型信息
+   */
+  private collectEnumType(stmt: EnumDeclaration): TypeInfo {
+    const members = new Map<string, EnumMemberInfo>();
+    
+    for (const member of stmt.members) {
+      const memberInfo: EnumMemberInfo = {
+        name: member.name,
+        isCallable: !!member.associatedData && member.associatedData.length > 0,
+      };
+      
+      // 处理显式值
+      if (member.value) {
+        memberInfo.valueType = this.inferExpressionType(member.value);
+      }
+      
+      // 处理关联数据
+      if (member.associatedData && member.associatedData.length > 0) {
+        memberInfo.associatedData = member.associatedData.map(p => 
+          this.resolveTypeAnnotation(p.typeAnnotation)
+        );
+      }
+      
+      members.set(member.name, memberInfo);
+    }
+    
+    return { kind: 'enum', name: stmt.name, members };
+  }
+
+  /**
+   * 推断表达式类型（简化版，用于 enum 值）
+   */
+  private inferExpressionType(expr: Expression): TypeInfo {
+    if (expr.type === 'Literal') {
+      return this.inferLiteralType(expr.value);
+    }
+    return { kind: 'unknown' };
   }
 
   private collectClassType(stmt: ClassDeclaration): TypeInfo {
@@ -200,6 +282,9 @@ export class TypeChecker {
         break;
       }
       case 'FunctionDeclaration': {
+        // Add function to current scope to support recursion and calling from subsequent statements in the block
+        scope.symbols.set(stmt.name, { type: this.resolveFunctionType(stmt) });
+
         const fnScope: Scope = { parent: scope, symbols: new Map() };
         for (const param of stmt.params) {
           fnScope.symbols.set(param.name, { type: this.resolveTypeAnnotation(param.typeAnnotation) });
@@ -350,8 +435,8 @@ export class TypeChecker {
         if (!symbol) {
           errors.push({
             message: `Undefined identifier '${expr.name}'`,
-            line: 0,
-            column: 0,
+            line: expr.line || 0,
+            column: expr.column || 0,
             file: filename,
           });
           return { kind: 'unknown' };
@@ -360,6 +445,8 @@ export class TypeChecker {
       }
       case 'Literal':
         return this.inferLiteralType(expr.value);
+      case 'CharLiteral':
+        return { kind: 'primitive', name: 'Char' };
       case 'BinaryExpression': {
         const leftType = this.checkExpression(expr.left, scope, filename, errors);
         const rightType = this.checkExpression(expr.right, scope, filename, errors);
@@ -402,6 +489,28 @@ export class TypeChecker {
         // For non-computed access (obj.prop), check if member exists
         if (expr.property.type === 'Identifier') {
           const memberName = expr.property.name;
+          
+          // Enum 成员访问: EnumName.MemberName
+          if (objectType.kind === 'enum') {
+            const member = objectType.members.get(memberName);
+            if (!member) {
+              errors.push({
+                message: `Enum member '${memberName}' does not exist on enum '${objectType.name}'`,
+                line: 0,
+                column: 0,
+                file: filename,
+              });
+              return { kind: 'unknown' };
+            }
+            // 返回 enumMember 类型
+            return {
+              kind: 'enumMember',
+              enumName: objectType.name,
+              memberName: member.name,
+              valueType: member.valueType,
+              associatedData: member.associatedData,
+            };
+          }
           
           if (objectType.kind === 'class') {
             const member = objectType.members.get(memberName);
@@ -521,6 +630,13 @@ export class TypeChecker {
         // is 表达式返回 Bool
         return { kind: 'primitive', name: 'Bool' };
       }
+      case 'IfExpression': {
+        this.checkExpression(expr.condition, scope, filename, errors);
+        const consequentType = this.checkExpression(expr.consequent, scope, filename, errors);
+        const alternateType = this.checkExpression(expr.alternate, scope, filename, errors);
+        // 返回两个分支的公共类型（简化处理，返回第一个分支的类型）
+        return consequentType;
+      }
       default:
         return { kind: 'unknown' };
     }
@@ -600,11 +716,8 @@ export class TypeChecker {
         if (leftType.name === 'Float' || rightType.name === 'Float') {
           return { kind: 'primitive', name: 'Float' };
         }
-        // 两个 Int 运算，除法返回 Float，其他返回 Int
+        // 两个 Int 运算，除法也返回 Int (整数除法)
         if (leftType.name === 'Int' && rightType.name === 'Int') {
-          if (operator === '/') {
-            return { kind: 'primitive', name: 'Float' };
-          }
           return { kind: 'primitive', name: 'Int' };
         }
         // Num 类型
@@ -728,6 +841,16 @@ export class TypeChecker {
       return source.name === target.name;
     }
     
+    // Enum 类型：enumMember 可以赋值给对应的 enum 类型
+    if (source.kind === 'enumMember' && target.kind === 'enum') {
+      return source.enumName === target.name;
+    }
+    
+    // 同一 enum 的成员之间可以赋值
+    if (source.kind === 'enumMember' && target.kind === 'enumMember') {
+      return source.enumName === target.enumName;
+    }
+    
     return false;
   }
 
@@ -767,6 +890,10 @@ export class TypeChecker {
         return type.name;
       case 'class':
         return type.name;
+      case 'enum':
+        return type.name;
+      case 'enumMember':
+        return `${type.enumName}.${type.memberName}`;
       case 'array':
         return `${this.typeToString(type.elementType)}[]`;
       case 'function':

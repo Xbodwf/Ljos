@@ -54,12 +54,20 @@ export class Lexer {
       case '-': this.addToken(this.match('=') ? TokenType.MINUS_ASSIGN : TokenType.MINUS); break;
       case '*': this.addToken(this.match('=') ? TokenType.STAR_ASSIGN : TokenType.STAR); break;
       case '%': this.addToken(this.match('=') ? TokenType.PERCENT_ASSIGN : TokenType.PERCENT); break;
-      case '&': this.addToken(TokenType.AMP); break;
-      case '|': this.addToken(TokenType.PIPE); break;
+      case '&': this.addToken(this.match('&') ? TokenType.AND : TokenType.AMP); break;
+      case '|': this.addToken(this.match('|') ? TokenType.OR : TokenType.PIPE); break;
       case ',': this.addToken(TokenType.COMMA); break;
       case ';': this.addToken(TokenType.SEMICOLON); break;
       case ':': this.addToken(TokenType.COLON); break;
-      case '@': this.addToken(TokenType.AT); break;
+      case '@':
+        // Check for template string prefix @"
+        if (this.peek() === '"') {
+          this.advance(); // consume "
+          this.templateString();
+        } else {
+          this.addToken(TokenType.AT);
+        }
+        break;
 
       case '.':
         if (this.match('.')) {
@@ -133,16 +141,17 @@ export class Lexer {
           this.advance();
           this.typeComment();
         } else {
-          throw new LexerError(`Unexpected character: ${c}`, this.line, this.startColumn);
+          // Character literal 'c' or '\n' etc.
+          this.charLiteral();
         }
         break;
 
       case '"':
-        this.string();
+        this.string(); // Regular string, no template interpolation
         break;
 
       case '`':
-        this.rawString();
+        this.templateBacktickString(); // Template string with interpolation
         break;
 
       // Whitespace
@@ -223,7 +232,110 @@ export class Lexer {
     this.addToken(TokenType.STRING, value);
   }
 
-  private rawString(): void {
+  // Character literal 'c' or '\n' etc.
+  private charLiteral(): void {
+    let value: string;
+    
+    if (this.peek() === '\\') {
+      this.advance(); // consume backslash
+      const escaped = this.advance();
+      switch (escaped) {
+        case 'n': value = '\n'; break;
+        case 'r': value = '\r'; break;
+        case 't': value = '\t'; break;
+        case '\\': value = '\\'; break;
+        case '\'': value = '\''; break;
+        case '0': value = '\0'; break;
+        case 'x': {
+          const hex = this.source.substring(this.current, this.current + 2);
+          this.current += 2;
+          this.column += 2;
+          value = String.fromCharCode(parseInt(hex, 16));
+          break;
+        }
+        case 'u': {
+          const hex = this.source.substring(this.current, this.current + 4);
+          this.current += 4;
+          this.column += 4;
+          value = String.fromCharCode(parseInt(hex, 16));
+          break;
+        }
+        default:
+          throw new LexerError(`Invalid escape sequence in char literal: \\${escaped}`, this.line, this.column);
+      }
+    } else if (this.isAtEnd() || this.peek() === '\'') {
+      throw new LexerError('Empty character literal', this.line, this.startColumn);
+    } else {
+      value = this.advance();
+    }
+    
+    if (this.peek() !== '\'') {
+      throw new LexerError('Unterminated character literal or multi-character literal', this.line, this.startColumn);
+    }
+    
+    this.advance(); // Closing '
+    this.addToken(TokenType.CHAR, value);
+  }
+
+  // Template string with @"..." prefix - supports ${} interpolation with escape sequences
+  private templateString(): void {
+    let value = '';
+    
+    while (this.peek() !== '"' && !this.isAtEnd()) {
+      if (this.peek() === '\n') {
+        this.line++;
+        this.column = 1;
+      }
+      
+      if (this.peek() === '\\') {
+        this.advance();
+        const escaped = this.advance();
+        switch (escaped) {
+          case 'n': value += '\n'; break;
+          case 'r': value += '\r'; break;
+          case 't': value += '\t'; break;
+          case '\\': value += '\\'; break;
+          case '"': value += '"'; break;
+          case '$': value += '$'; break;
+          case 'x': {
+            const hex = this.source.substring(this.current, this.current + 2);
+            this.current += 2;
+            this.column += 2;
+            value += String.fromCharCode(parseInt(hex, 16));
+            break;
+          }
+          case 'u': {
+            const hex = this.source.substring(this.current, this.current + 4);
+            this.current += 4;
+            this.column += 4;
+            value += String.fromCharCode(parseInt(hex, 16));
+            break;
+          }
+          case 'U': {
+            const hex = this.source.substring(this.current, this.current + 8);
+            this.current += 8;
+            this.column += 8;
+            value += String.fromCodePoint(parseInt(hex, 16));
+            break;
+          }
+          default:
+            throw new LexerError(`Invalid escape sequence: \\${escaped}`, this.line, this.column);
+        }
+      } else {
+        value += this.advance();
+      }
+    }
+
+    if (this.isAtEnd()) {
+      throw new LexerError('Unterminated template string', this.line, this.startColumn);
+    }
+
+    this.advance(); // Closing "
+    this.addToken(TokenType.TEMPLATE_STRING, value);
+  }
+
+  // Template backtick string `...` - supports ${} interpolation, raw (no escape processing)
+  private templateBacktickString(): void {
     let value = '';
     
     while (this.peek() !== '`' && !this.isAtEnd()) {
@@ -235,11 +347,11 @@ export class Lexer {
     }
 
     if (this.isAtEnd()) {
-      throw new LexerError('Unterminated raw string', this.line, this.startColumn);
+      throw new LexerError('Unterminated template string', this.line, this.startColumn);
     }
 
     this.advance(); // Closing `
-    this.addToken(TokenType.RAW_STRING, value);
+    this.addToken(TokenType.TEMPLATE_STRING, value);
   }
 
   private number(): void {

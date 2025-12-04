@@ -29,8 +29,14 @@
     "languages": [
       {
         "id": "ljos",
-        "aliases": ["Ljos", "ljos", "lj"],
-        "extensions": [".lj"],
+        "aliases": [
+          "Ljos",
+          "ljos",
+          "lj"
+        ],
+        "extensions": [
+          ".lj"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
